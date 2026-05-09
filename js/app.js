@@ -13,7 +13,7 @@ register('/signup',   (ctx) => Signup(ctx));
 register('/login',    (ctx) => Login(ctx));
 
 // Dashboard panels — all share the same shell, just different inner panel.
-const DASH_PATH = /^\/app(?:\/(?<panel>overview|score|loans|transactions|assistant|profile))?$/;
+const DASH_PATH = /^\/app(?:\/(?<panel>overview|score|loans|inventory|transactions|assistant|profile))?$/;
 register(DASH_PATH, (ctx) => Shell({
   panel: ctx.params.panel || 'overview',
   navigate: ctx.navigate,

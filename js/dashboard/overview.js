@@ -1,9 +1,11 @@
-import { el, fmt, fmtShort, animate, icon } from '../utils.js';
-import { TRADER, TXS, REV, MONS } from '../data.js';
+import { el, fmt, animate, icon } from '../utils.js';
+import { TXS, REV, MONS } from '../data.js';
+import { getUser } from '../store.js';
 import { generateScoreInsight, detectAlerts, recommendLoan, forecastNextMonths, categorize } from '../ai.js';
 import { TxRow } from '../components/txRow.js';
 
 export function Overview({ navigate }) {
+  const TRADER = getUser();
   const root = el('div', { class: 'max-w-[1280px] mx-auto space-y-6' });
 
   // ── Greeting ──────────────────────────────────────────────
@@ -32,7 +34,7 @@ export function Overview({ navigate }) {
   }));
   kpis.appendChild(KpiCard({
     iconName: 'wallet2', iconBg: '#E5F9F0', iconColor: '#27AE60', label: 'Monthly revenue',
-    value: fmtShort(TRADER.monthlyRevenue), sub: `+${TRADER.growth}% vs last month`, accent: '#27AE60',
+    value: fmt(TRADER.monthlyRevenue), sub: `+${TRADER.growth}% vs last month`, accent: '#27AE60',
   }));
   kpis.appendChild(KpiCard({
     iconName: 'arrow-left-right', iconBg: '#E8F4EE', iconColor: '#1F8A65', label: 'Transactions',

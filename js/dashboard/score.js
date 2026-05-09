@@ -1,9 +1,11 @@
 import { el, animate, icon } from '../utils.js';
-import { TRADER, FACTORS } from '../data.js';
+import { FACTORS } from '../data.js';
+import { getUser } from '../store.js';
 import { ScoreGauge } from '../components/scoreGauge.js';
 import { generateScoreInsight } from '../ai.js';
 
 export function ScorePanel({ navigate }) {
+  const TRADER = getUser();
   const root = el('div', { class: 'max-w-[1280px] mx-auto space-y-6' });
   const ins = generateScoreInsight();
 

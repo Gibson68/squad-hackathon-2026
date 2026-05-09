@@ -1,4 +1,4 @@
-import { el, fmt, fmtShort, icon } from '../utils.js';
+import { el, fmt, icon } from '../utils.js';
 import { TXS } from '../data.js';
 import { categorize } from '../ai.js';
 
@@ -12,9 +12,9 @@ export function Transactions({ navigate }) {
   const outflow = TXS.filter(t => t.type === 'out').reduce((s, t) => s + t.amount, 0);
 
   root.appendChild(el('div', { class: 'grid grid-cols-2 lg:grid-cols-4 gap-4 fade-up' },
-    KpiSm('Total inflow',  fmtShort(inflow),  TXS.filter(t => t.type === 'in').length + ' transactions',  '#27AE60', 'arrow-down-circle'),
-    KpiSm('Total outflow', fmtShort(outflow), TXS.filter(t => t.type === 'out').length + ' transactions', '#D4711F', 'arrow-up-circle'),
-    KpiSm('Net flow',      fmtShort(inflow - outflow), 'Last 30 days', '#0B6E4F', 'graph-up-arrow'),
+    KpiSm('Total inflow',  fmt(inflow),  TXS.filter(t => t.type === 'in').length + ' transactions',  '#27AE60', 'arrow-down-circle'),
+    KpiSm('Total outflow', fmt(outflow), TXS.filter(t => t.type === 'out').length + ' transactions', '#D4711F', 'arrow-up-circle'),
+    KpiSm('Net flow',      fmt(inflow - outflow), 'Last 30 days', '#0B6E4F', 'graph-up-arrow'),
     KpiSm('Categories',    Object.keys(buildCategoryMap()).length, 'AI-detected types', '#6C5CE7', 'tags'),
   ));
 

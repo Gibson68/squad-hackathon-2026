@@ -1,22 +1,25 @@
 import { el, icon } from '../utils.js';
-import { TRADER } from '../data.js';
-import { Overview }     from './overview.js';
-import { ScorePanel }   from './score.js';
-import { LoansPanel }   from './loans.js';
-import { Transactions } from './transactions.js';
-import { Assistant }    from './assistant.js';
-import { ProfilePanel } from './profile.js';
+import { getUser } from '../store.js';
+import { Overview }       from './overview.js';
+import { ScorePanel }     from './score.js';
+import { LoansPanel }     from './loans.js';
+import { Transactions }   from './transactions.js';
+import { InventoryPanel } from './inventory.js';
+import { Assistant }      from './assistant.js';
+import { ProfilePanel }   from './profile.js';
 
 const PANELS = {
-  overview:     { title: 'Overview',       icon: 'house-door',       render: Overview     },
-  score:        { title: 'TradeScore',     icon: 'speedometer2',     render: ScorePanel   },
-  loans:        { title: 'Loans',          icon: 'cash-coin',        render: LoansPanel   },
-  transactions: { title: 'Transactions',   icon: 'arrow-left-right', render: Transactions },
-  assistant:    { title: 'AI Assistant',   icon: 'stars',            render: Assistant    },
-  profile:      { title: 'Profile',        icon: 'person-circle',    render: ProfilePanel },
+  overview:     { title: 'Overview',       icon: 'house-door',       render: Overview       },
+  score:        { title: 'TradeScore',     icon: 'speedometer2',     render: ScorePanel     },
+  loans:        { title: 'Loans',          icon: 'cash-coin',        render: LoansPanel     },
+  inventory:    { title: 'Inventory',      icon: 'box-seam',         render: InventoryPanel },
+  transactions: { title: 'Transactions',   icon: 'arrow-left-right', render: Transactions   },
+  assistant:    { title: 'AI Assistant',   icon: 'stars',            render: Assistant      },
+  profile:      { title: 'Profile',        icon: 'person-circle',    render: ProfilePanel   },
 };
 
 export function Shell({ panel, navigate }) {
+  const user = getUser();
   const root = el('div', { class: 'min-h-screen bg-squad-paper relative' });
 
   // Backdrop for mobile sidebar
@@ -106,10 +109,10 @@ export function Shell({ panel, navigate }) {
       el('div', {
         class: 'w-10 h-10 rounded-xl flex items-center justify-center text-white font-extrabold text-[13px]',
         style: { background: 'linear-gradient(135deg, #0B6E4F, #1F8A65)' },
-      }, TRADER.avatar),
+      }, user.avatar),
       el('div', { class: 'flex-1 min-w-0' },
-        el('div', { class: 'text-[13px] font-bold text-ink-1 truncate' }, TRADER.name),
-        el('div', { class: 'text-[11px] text-ink-3 truncate' }, TRADER.business),
+        el('div', { class: 'text-[13px] font-bold text-ink-1 truncate' }, user.name),
+        el('div', { class: 'text-[11px] text-ink-3 truncate' }, user.business),
       ),
       el('span', { class: 'text-ink-3', style: { fontSize: '14px' } }, icon('three-dots')),
     ),

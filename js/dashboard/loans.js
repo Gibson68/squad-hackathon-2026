@@ -1,8 +1,10 @@
-import { el, fmt, fmtShort, icon } from '../utils.js';
-import { TRADER, LOAN_TIERS } from '../data.js';
+import { el, fmt, icon } from '../utils.js';
+import { LOAN_TIERS } from '../data.js';
+import { getUser } from '../store.js';
 import { recommendLoan } from '../ai.js';
 
 export function LoansPanel({ navigate }) {
+  const TRADER = getUser();
   const root = el('div', { class: 'max-w-[1280px] mx-auto space-y-6' });
 
   // ── Hero / eligibility ────────────────────────────────────
@@ -127,7 +129,7 @@ function TierCard(t, eligible, i) {
   card.appendChild(el('p', { class: 'text-[12px] text-ink-3 mt-0.5 mb-4' }, t.desc));
   card.appendChild(el('div', { class: 'flex items-baseline gap-1.5' },
     el('span', { class: 'font-display font-extrabold text-squad-deep', style: { fontSize: '28px' } },
-      'Up to ' + fmtShort(t.max)),
+      'Up to ' + fmt(t.max)),
   ));
   card.appendChild(el('div', { class: 'text-[12px] text-ink-2 mt-1' },
     `${t.rateMonthly}% / month · ${t.term}`));
@@ -170,8 +172,8 @@ function buildCalculator(TRADER, navigate) {
   });
   controls.appendChild(slider);
   controls.appendChild(el('div', { class: 'flex justify-between mt-2 text-[11px] text-ink-3 font-semibold' },
-    el('span', {}, '₦20K'),
-    el('span', {}, fmtShort(TRADER.loanEligible)),
+    el('span', {}, fmt(20000)),
+    el('span', {}, fmt(TRADER.loanEligible)),
   ));
 
   // Term selector

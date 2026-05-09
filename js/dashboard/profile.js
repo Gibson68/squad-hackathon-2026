@@ -1,17 +1,18 @@
-import { el, icon } from '../utils.js';
-import { TRADER } from '../data.js';
-
-const SETTINGS = [
-  { icon: 'shop',           label: 'Business details', sub: 'Edit shop name, category, location' },
-  { icon: 'link-45deg',     label: 'Squad wallet',     sub: 'Connected · ' + TRADER.squadWallet, tag: 'Linked' },
-  { icon: 'file-earmark-text', label: 'Loan history',  sub: 'View past loans & repayment schedule' },
-  { icon: 'bell',           label: 'Notifications',    sub: 'Email, SMS and in-app alerts' },
-  { icon: 'shield-lock',    label: 'Security & PIN',   sub: 'Two-factor authentication, login PIN' },
-  { icon: 'robot',          label: 'AI preferences',   sub: 'Tune insight frequency and tone' },
-  { icon: 'question-circle',label: 'Help & support',   sub: 'Chat with our team, read FAQs' },
-];
+import { el, fmt, icon } from '../utils.js';
+import { getUser } from '../store.js';
 
 export function ProfilePanel({ navigate }) {
+  const TRADER = getUser();
+  const SETTINGS = [
+    { icon: 'shop',              label: 'Business details', sub: 'Edit shop name, category, location' },
+    { icon: 'link-45deg',        label: 'Squad wallet',     sub: 'Connected · ' + TRADER.squadWallet, tag: 'Linked' },
+    { icon: 'box-seam',          label: 'Inventory',        sub: 'Manage items and prices', target: '#/app/inventory' },
+    { icon: 'file-earmark-text', label: 'Loan history',     sub: 'View past loans & repayment schedule' },
+    { icon: 'bell',              label: 'Notifications',    sub: 'Email, SMS and in-app alerts' },
+    { icon: 'shield-lock',       label: 'Security & PIN',   sub: 'Two-factor authentication, login PIN' },
+    { icon: 'robot',             label: 'AI preferences',   sub: 'Tune insight frequency and tone' },
+    { icon: 'question-circle',   label: 'Help & support',   sub: 'Chat with our team, read FAQs' },
+  ];
   const root = el('div', { class: 'max-w-[960px] mx-auto space-y-6' });
 
   // ── Header card ──────────────────────────────────────────
@@ -50,10 +51,10 @@ export function ProfilePanel({ navigate }) {
   // ── Stat strip ──────────────────────────────────────────
   const strip = el('div', { class: 'grid grid-cols-2 lg:grid-cols-4 gap-4 fade-up-1' });
   [
-    { label: 'TradeScore',     value: TRADER.score },
-    { label: 'Monthly revenue', value: '₦' + (TRADER.monthlyRevenue / 1000).toFixed(0) + 'K' },
-    { label: 'Streak',         value: TRADER.streak + ' mo' },
-    { label: 'Growth',         value: '+' + TRADER.growth + '%' },
+    { label: 'TradeScore',      value: TRADER.score },
+    { label: 'Monthly revenue', value: fmt(TRADER.monthlyRevenue) },
+    { label: 'Streak',          value: TRADER.streak + ' mo' },
+    { label: 'Growth',          value: '+' + TRADER.growth + '%' },
   ].forEach(s => strip.appendChild(el('div', { class: 'card p-5' },
     el('div', { class: 'text-[10.5px] uppercase tracking-wider text-ink-3 font-bold' }, s.label),
     el('div', {
@@ -69,6 +70,7 @@ export function ProfilePanel({ navigate }) {
     const row = el('button', {
       class: 'w-full flex items-center gap-4 p-5 text-left hover:bg-squad-paper transition-colors',
       style: i < SETTINGS.length - 1 ? { borderBottom: '1px solid #E2E8E4' } : {},
+      onClick: s.target ? () => navigate(s.target) : undefined,
     },
       el('div', {
         class: 'w-11 h-11 rounded-xl flex items-center justify-center',

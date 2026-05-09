@@ -1,4 +1,5 @@
 import { el, icon } from '../utils.js';
+import { saveUser } from '../store.js';
 
 const STEPS = [
   { key: 'account',  title: 'Create your account',     sub: 'Just an email & a password to start.' },
@@ -10,7 +11,7 @@ const STEPS = [
 export function Signup({ navigate }) {
   let step = 0;
   const data = {
-    email: '', password: '',
+    name: '', email: '', password: '',
     business: '', category: 'Fashion', location: '',
   };
 
@@ -139,8 +140,13 @@ export function Signup({ navigate }) {
   // ── Step 1: Account ────────────────────────────────────
   function stepAccount() {
     const wrap = el('div', { class: 'space-y-4' });
+    const nameField  = field('Full name', 'name', 'e.g. Funmi Adeyemi');
     const emailField = field('Email address', 'email', 'you@business.ng', 'email');
     const passField  = field('Create password', 'password', 'At least 8 characters', 'password');
+    nameField.input.value = data.name;
+    emailField.input.value = data.email;
+    passField.input.value  = data.password;
+    wrap.appendChild(nameField.field);
     wrap.appendChild(emailField.field);
     wrap.appendChild(passField.field);
 
@@ -158,6 +164,11 @@ export function Signup({ navigate }) {
     const cta = el('button', {
       class: 'btn btn-primary w-full mt-6 py-[15px]',
       onClick: () => {
+        if (!nameField.input.value.trim() || nameField.input.value.trim().length < 2) {
+          nameField.error.textContent = 'Please enter your name.';
+          nameField.error.style.display = 'block';
+          return;
+        }
         if (!emailField.input.value || emailField.input.value.length < 4) {
           emailField.error.textContent = 'Please enter a valid email.';
           emailField.error.style.display = 'block';
@@ -168,6 +179,7 @@ export function Signup({ navigate }) {
           passField.error.style.display = 'block';
           return;
         }
+        data.name = nameField.input.value.trim();
         data.email = emailField.input.value;
         data.password = passField.input.value;
         next();
@@ -224,8 +236,8 @@ export function Signup({ navigate }) {
           nameField.error.style.display = 'block';
           return;
         }
-        data.business = nameField.input.value;
-        data.location = locField.input.value;
+        data.business = nameField.input.value.trim();
+        data.location = locField.input.value.trim();
         next();
       },
     }, 'Continue', icon('arrow-right')));
@@ -277,6 +289,15 @@ export function Signup({ navigate }) {
       connectBtn.innerHTML = '';
       connectBtn.appendChild(el('span', { class: 'spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full' }));
       connectBtn.appendChild(el('span', {}, 'Authorizing with Squad…'));
+      // Persist signup details so the dashboard reflects the real user.
+      saveUser({
+        name: data.name,
+        email: data.email,
+        business: data.business || `${data.name.split(' ')[0]}’s Shop`,
+        category: data.category,
+        location: data.location,
+        since: new Date().toLocaleString('en-NG', { month: 'long', year: 'numeric' }),
+      });
       setTimeout(() => next(), 1500);
     });
     wrap.appendChild(connectBtn);

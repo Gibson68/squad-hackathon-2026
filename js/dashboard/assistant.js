@@ -1,6 +1,6 @@
 import { el, icon } from '../utils.js';
 import { chatRespond, streamReply } from '../ai.js';
-import { TRADER } from '../data.js';
+import { getUser } from '../store.js';
 
 const SUGGESTIONS = [
   'How can I improve my TradeScore?',
@@ -11,6 +11,7 @@ const SUGGESTIONS = [
 ];
 
 export function Assistant() {
+  const TRADER = getUser();
   const root = el('div', { class: 'max-w-[960px] mx-auto h-[calc(100vh-120px)] flex flex-col' });
 
   // ── Header ────────────────────────────────────────────────
