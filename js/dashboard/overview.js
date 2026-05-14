@@ -1,7 +1,7 @@
-import { el, fmt, animate, icon } from '../utils.js';
-import { TXS, REV, MONS } from '../data.js';
-import { getUser } from '../store.js';
-import { generateScoreInsight, detectAlerts, recommendLoan, forecastNextMonths, categorize } from '../ai.js';
+import { el, fmt, animate, icon, openModal } from '../utils.js';
+import { REV, MONS } from '../data.js';
+import { getUser, getAllTransactions } from '../store.js';
+import { recommendLoan, categorize } from '../ai.js';
 import { TxRow } from '../components/txRow.js';
 
 export function Overview({ navigate }) {
@@ -13,36 +13,49 @@ export function Overview({ navigate }) {
               : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening';
   root.appendChild(el('div', { class: 'flex flex-wrap items-end justify-between gap-3 fade-up' },
     el('div', {},
-      el('p', { class: 'text-ink-2 text-[14px] flex items-center gap-1.5' },
-        `${hello}, ${TRADER.firstName}`, icon('hand-thumbs-up')),
+      el('p', { class: 'text-ink-2 text-[14px]' }, `${hello}, ${TRADER.firstName}`),
       el('h2', {
-        class: 'font-display text-[24px] md:text-[30px] font-extrabold text-squad-deep',
+        class: 'font-display text-[22px] md:text-[26px] font-extrabold text-squad-deep',
         style: { letterSpacing: '-0.025em' },
-      }, 'Here’s how your business is doing today.'),
+      }, 'Your business today'),
     ),
     el('div', { class: 'chip', style: { background: '#E5F9F0', color: '#27AE60' } },
       el('span', { style: { fontSize: '7px' } }, '●'),
-      'Live · synced with Squad 2 min ago'),
+      'Synced 2 min ago'),
   ));
 
   // ── KPI strip ─────────────────────────────────────────────
+  // Single green family — graded from deepest (hero score) to brightest.
+  const scoreSub = TRADER.scoreBoost > 0
+    ? `+${TRADER.scoreBoost} pts from your sales`
+    : '+12 pts this week';
+  const txSub = TRADER.salesCount > 0
+    ? `${TRADER.salesCount} from inventory · ${TRADER.transactions - TRADER.salesCount} bank`
+    : 'this month';
+  const revSub = TRADER.salesValue > 0
+    ? `+${fmt(TRADER.salesValue)} from sales today`
+    : `+${TRADER.growth}% vs last month`;
   const kpis = el('div', { class: 'grid grid-cols-2 lg:grid-cols-4 gap-4 fade-up-1' });
   kpis.appendChild(KpiCard({
-    iconName: 'speedometer2', iconBg: '#E8F4EE', iconColor: '#0B6E4F', label: 'TradeScore',
-    value: TRADER.score, sub: '+12 pts this week', accent: '#0B6E4F',
+    iconName: 'speedometer2', label: 'TradeScore',
+    value: TRADER.score, sub: scoreSub,
+    from: '#022B23', to: '#0B6E4F',
     onClick: () => navigate('#/app/score'),
   }));
   kpis.appendChild(KpiCard({
-    iconName: 'wallet2', iconBg: '#E5F9F0', iconColor: '#27AE60', label: 'Monthly revenue',
-    value: fmt(TRADER.monthlyRevenue), sub: `+${TRADER.growth}% vs last month`, accent: '#27AE60',
+    iconName: 'wallet2', label: 'Monthly revenue',
+    value: fmt(TRADER.monthlyRevenue), sub: revSub,
+    from: '#0B6E4F', to: '#14855F',
   }));
   kpis.appendChild(KpiCard({
-    iconName: 'arrow-left-right', iconBg: '#E8F4EE', iconColor: '#1F8A65', label: 'Transactions',
-    value: TRADER.transactions, sub: 'this month', accent: '#1F8A65',
+    iconName: 'arrow-left-right', label: 'Transactions',
+    value: TRADER.transactions, sub: txSub,
+    from: '#14855F', to: '#1F8A65',
   }));
   kpis.appendChild(KpiCard({
-    iconName: 'people', iconBg: '#EFEDFE', iconColor: '#6C5CE7', label: 'Unique customers',
-    value: TRADER.uniqueCustomers, sub: '+11 new this week', accent: '#6C5CE7',
+    iconName: 'people', label: 'Customers',
+    value: TRADER.uniqueCustomers, sub: '+11 new this week',
+    from: '#1F8A65', to: '#27AE60',
   }));
   root.appendChild(kpis);
 
@@ -51,23 +64,13 @@ export function Overview({ navigate }) {
 
   // Left column (2/3)
   const left = el('div', { class: 'lg:col-span-2 space-y-6' });
-
-  // AI Insight banner
-  left.appendChild(buildAiInsightBanner(navigate));
-
-  // Revenue chart
   left.appendChild(buildRevenueCard());
-
-  // Recent transactions with categories
   left.appendChild(buildRecentTxs(navigate));
-
   grid.appendChild(left);
 
-  // Right column (1/3)
+  // Right column (1/3) — single loan offer, no AI noise
   const right = el('div', { class: 'space-y-6' });
   right.appendChild(buildLoanOfferCard(navigate));
-  right.appendChild(buildAlertsCard());
-  right.appendChild(buildForecastCard());
   grid.appendChild(right);
 
   root.appendChild(grid);
@@ -76,27 +79,59 @@ export function Overview({ navigate }) {
 }
 
 // ── KPI ────────────────────────────────────────────────────────
-function KpiCard({ iconName, iconBg = '#E8F4EE', iconColor = '#0B6E4F', label, value, sub, accent, onClick }) {
+function KpiCard({ iconName, label, value, sub, from, to, onClick }) {
   const card = el('div', {
-    class: 'card p-5 ' + (onClick ? 'card-hover cursor-pointer' : ''),
+    class: 'rounded-2xl p-5 relative overflow-hidden ' + (onClick ? 'cursor-pointer' : ''),
+    style: {
+      background: `linear-gradient(135deg, ${from} 0%, ${to} 100%)`,
+      boxShadow: `0 10px 24px -10px ${from}99`,
+      transition: 'transform 0.2s, box-shadow 0.2s',
+    },
     onClick,
   });
-  card.appendChild(el('div', { class: 'flex items-center justify-between mb-3' },
+  if (onClick) {
+    card.addEventListener('mouseenter', () => {
+      card.style.transform = 'translateY(-2px)';
+      card.style.boxShadow = `0 16px 30px -10px ${from}cc`;
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.transform = 'translateY(0)';
+      card.style.boxShadow = `0 10px 24px -10px ${from}99`;
+    });
+  }
+  // Subtle halo top-right
+  card.appendChild(el('div', {
+    style: {
+      position: 'absolute', top: '-50px', right: '-50px',
+      width: '150px', height: '150px', borderRadius: '50%',
+      background: 'radial-gradient(circle, rgba(255,255,255,0.12), transparent 70%)',
+      pointerEvents: 'none',
+    },
+  }));
+  card.appendChild(el('div', { class: 'flex items-center gap-2.5 mb-3 relative' },
     el('div', {
-      class: 'w-10 h-10 rounded-xl flex items-center justify-center',
-      style: { background: iconBg, color: iconColor, fontSize: '17px' },
+      class: 'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
+      style: {
+        background: 'rgba(255,255,255,0.18)',
+        color: '#fff', fontSize: '15px',
+        boxShadow: '0 0 0 1px rgba(255,255,255,0.18) inset',
+      },
     }, icon(iconName)),
-    onClick ? el('span', { class: 'text-ink-3', style: { fontSize: '13px' } }, icon('arrow-right')) : null,
+    el('div', {
+      class: 'text-[11.5px] font-bold uppercase tracking-[0.08em]',
+      style: { color: 'rgba(255,255,255,0.82)' },
+    }, label),
   ));
-  card.appendChild(el('div', { class: 'text-[10.5px] uppercase tracking-[0.1em] text-ink-3 font-bold' }, label));
   const v = el('div', {
-    class: 'font-display text-[24px] md:text-[26px] font-extrabold text-ink-1 mt-1',
+    class: 'font-display text-[26px] font-extrabold text-white relative',
     style: { letterSpacing: '-0.025em' },
   }, '0');
   card.appendChild(v);
-  card.appendChild(el('div', { class: 'text-[11.5px] mt-1 font-medium', style: { color: accent } }, sub));
+  card.appendChild(el('div', {
+    class: 'text-[11.5px] mt-0.5 relative font-semibold',
+    style: { color: 'rgba(255,255,255,0.75)' },
+  }, sub));
 
-  // Animate counter if value is a number
   if (typeof value === 'number') {
     animate({ to: value, duration: 1000, onUpdate: n => v.textContent = Math.round(n).toLocaleString() });
   } else {
@@ -105,99 +140,92 @@ function KpiCard({ iconName, iconBg = '#E8F4EE', iconColor = '#0B6E4F', label, v
   return card;
 }
 
-// ── AI Insight banner ──────────────────────────────────────────
-function buildAiInsightBanner(navigate) {
-  const ins = generateScoreInsight();
-  const card = el('div', {
-    class: 'rounded-2xl p-6 md:p-7 relative overflow-hidden',
-    style: {
-      background: 'linear-gradient(135deg, #022B23 0%, #0B6E4F 100%)',
-      boxShadow: '0 12px 32px rgba(2, 43, 35, 0.15)',
-    },
-  });
-  card.appendChild(el('div', {
-    class: 'absolute rounded-full',
-    style: { width: '260px', height: '260px', top: '-90px', right: '-80px',
-             background: 'radial-gradient(circle, rgba(232,255,139,0.18), transparent 70%)' },
-  }));
-  const inner = el('div', { class: 'relative z-10' });
-
-  inner.appendChild(el('div', { class: 'flex items-center gap-2 mb-4' },
-    el('div', {
-      class: 'w-8 h-8 rounded-full flex items-center justify-center',
-      style: { background: 'rgba(232,255,139,0.16)', color: '#E8FF8B', fontSize: '14px' },
-    }, icon('stars')),
-    el('div', { class: 'text-[11px] font-bold uppercase tracking-[0.18em]', style: { color: '#E8FF8B' } },
-      'AI INSIGHT · GENERATED LIVE'),
-  ));
-
-  inner.appendChild(el('h3', {
-    class: 'font-display text-white text-[22px] md:text-[26px] font-extrabold leading-tight',
-    style: { letterSpacing: '-0.02em' },
-  }, ins.headline));
-
-  const body = el('div', { class: 'mt-3 space-y-2' });
-  ins.body.forEach(t => body.appendChild(el('p', {
-    class: 'text-[13.5px] leading-relaxed ai-text',
-    style: { color: 'rgba(255,255,255,0.78)' },
-    html: t.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#E8FF8B;">$1</strong>'),
-  })));
-  inner.appendChild(body);
-
-  inner.appendChild(el('div', { class: 'flex flex-wrap items-center gap-3 mt-5' },
-    el('button', {
-      class: 'btn btn-lime !py-2.5 !px-4 !text-[13px]',
-      onClick: () => navigate('#/app/score'),
-    }, 'See full breakdown', icon('arrow-right')),
-    el('button', {
-      class: 'btn !py-2.5 !px-4 !text-[13px] text-white border border-white/30 hover:bg-white/10',
-      onClick: () => navigate('#/app/assistant'),
-    }, icon('chat-square-quote'), 'Ask follow-up'),
-    el('div', {
-      class: 'ml-auto text-[11px]',
-      style: { color: 'rgba(232,255,139,0.65)' },
-    }, `Confidence: ${Math.round(ins.confidence * 100)}%`),
-  ));
-  card.appendChild(inner);
-  return card;
-}
-
 // ── Revenue chart ──────────────────────────────────────────────
 function buildRevenueCard() {
   const card = el('div', { class: 'card p-6' });
-  card.appendChild(el('div', { class: 'flex items-center justify-between mb-1' },
+  card.appendChild(el('div', { class: 'flex items-center justify-between mb-4' },
     el('h3', { class: 'font-display text-[18px] font-extrabold text-squad-deep', style: { letterSpacing: '-0.02em' } }, 'Revenue trend'),
     el('div', { class: 'flex items-center gap-2' },
       el('span', { class: 'chip', style: { background: '#E5F9F0', color: '#27AE60' } },
         icon('arrow-up-short'), '18.4%'),
-      el('span', { class: 'chip', style: { background: '#F5F5F0', color: '#4A5C56' } }, '7 months'),
+      el('button', {
+        class: 'btn btn-ghost !py-1.5 !px-3 !text-[12px]',
+        onClick: () => openRevenueModal(),
+      }, icon('arrows-fullscreen'), 'Expand'),
     ),
   ));
-  card.appendChild(el('p', { class: 'text-[12.5px] text-ink-3 mb-5' }, 'Aggregated from your Squad transaction history'));
-  card.appendChild(buildRevenueChart());
+  card.appendChild(buildRevenueChart({ height: 220 }));
   return card;
 }
 
-function buildRevenueChart() {
-  const W = 720, H = 240, PAD_X = 20, PAD_Y = 30;
-  const fc = forecastNextMonths(2);
-  const series = [...REV, ...fc];
-  const labels = [...MONS, 'May*', 'Jun*'];
+function openRevenueModal() {
+  openModal(({ close }) => {
+    const wrap = el('div', { class: 'p-6' });
+    wrap.appendChild(el('div', { class: 'flex items-center justify-between mb-1' },
+      el('h3', { class: 'font-display text-[20px] font-extrabold text-squad-deep' }, 'Revenue trend'),
+      el('span', { class: 'chip', style: { background: '#E5F9F0', color: '#27AE60' } },
+        icon('arrow-up-short'), '18.4% vs last period'),
+    ));
+    wrap.appendChild(el('p', { class: 'text-[12.5px] text-ink-3 mb-4' },
+      'Hover or tap a point to see the month total'));
+    wrap.appendChild(buildRevenueChart({ height: 380 }));
+
+    const total = REV.reduce((s, v) => s + v, 0);
+    const avg = total / REV.length;
+    const best = Math.max(...REV);
+    const bestMon = MONS[REV.indexOf(best)];
+    const stats = el('div', { class: 'grid grid-cols-3 gap-3 mt-5' });
+    [
+      ['Total', fmt(total)],
+      ['Monthly average', fmt(Math.round(avg))],
+      ['Best month', `${fmt(best)} · ${bestMon}`],
+    ].forEach(([k, v]) => stats.appendChild(el('div', {
+      class: 'p-3 rounded-xl',
+      style: { background: '#F5F9F6', border: '1px solid #E2E8E4' },
+    },
+      el('div', { class: 'text-[10.5px] uppercase tracking-wider font-bold text-ink-3' }, k),
+      el('div', { class: 'font-display text-[15px] font-extrabold text-squad-deep mt-0.5' }, v),
+    )));
+    wrap.appendChild(stats);
+
+    wrap.appendChild(el('div', { class: 'flex justify-end mt-5' },
+      el('button', { class: 'btn btn-primary !py-2.5 !px-5 !text-[13px]', onClick: close }, 'Close'),
+    ));
+    return wrap;
+  }, { width: 820 });
+}
+
+function buildRevenueChart({ height = 220 } = {}) {
+  const W = 720, H = height, PAD_X = 30, PAD_Y = 30;
+  const series = REV;
+  const labels = MONS;
   const max = Math.max(...series) * 1.08;
   const stepX = (W - PAD_X * 2) / (series.length - 1);
 
   const points = series.map((v, i) => {
     const x = PAD_X + i * stepX;
     const y = H - PAD_Y - (v / max) * (H - PAD_Y * 2);
-    return [x, y];
+    return { x, y, v, label: labels[i] };
   });
-  const realPts = points.slice(0, REV.length);
-  const fcPts   = points.slice(REV.length - 1); // include last real point
-  const realLine = realPts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
-  const fillPath = realLine + ` L${realPts[realPts.length - 1][0].toFixed(1)} ${H - PAD_Y} L${realPts[0][0].toFixed(1)} ${H - PAD_Y} Z`;
-  const fcLine   = fcPts.map((p, i)  => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+  const line = points.map((p, i) => (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ' ' + p.y.toFixed(1)).join(' ');
+  const fillPath = line + ` L${points[points.length - 1].x.toFixed(1)} ${H - PAD_Y} L${points[0].x.toFixed(1)} ${H - PAD_Y} Z`;
+  const gradId = 'revFill_' + Math.random().toString(36).slice(2, 8);
 
-  const wrap = el('div', { class: 'w-full' });
+  const wrap = el('div', { class: 'w-full relative' });
+
+  // Tooltip element (absolute-positioned over the SVG)
+  const tip = el('div', {
+    style: {
+      position: 'absolute', pointerEvents: 'none', opacity: '0',
+      background: '#0A1F1A', color: '#fff', padding: '8px 12px',
+      borderRadius: '10px', fontSize: '12px', fontWeight: '700',
+      transform: 'translate(-50%, -120%)', whiteSpace: 'nowrap',
+      transition: 'opacity 0.15s', boxShadow: '0 8px 20px rgba(0,0,0,0.18)',
+      zIndex: '10',
+    },
+  });
+  wrap.appendChild(tip);
+
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', `0 0 ${W} ${H + 28}`);
   svg.style.width = '100%';
@@ -205,7 +233,7 @@ function buildRevenueChart() {
   svg.style.display = 'block';
   svg.innerHTML = `
     <defs>
-      <linearGradient id="revFill2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <linearGradient id="${gradId}" x1="0%" y1="0%" x2="0%" y2="100%">
         <stop offset="0%" stop-color="#0B6E4F" stop-opacity="0.22"/>
         <stop offset="100%" stop-color="#0B6E4F" stop-opacity="0"/>
       </linearGradient>
@@ -214,40 +242,77 @@ function buildRevenueChart() {
       const y = PAD_Y + ((H - PAD_Y * 2) / 4) * i;
       return `<line x1="${PAD_X}" y1="${y}" x2="${W - PAD_X}" y2="${y}" stroke="#E2E8E4" stroke-dasharray="4 6" />`;
     }).join('')}
-    <path d="${fillPath}" fill="url(#revFill2)" />
-    <path d="${realLine}" fill="none" stroke="#0B6E4F" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+    <path d="${fillPath}" fill="url(#${gradId})" />
+    <path d="${line}" fill="none" stroke="#0B6E4F" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
       stroke-dasharray="2000" stroke-dashoffset="2000">
-      <animate attributeName="stroke-dashoffset" from="2000" to="0" dur="1.4s" fill="freeze" />
+      <animate attributeName="stroke-dashoffset" from="2000" to="0" dur="1.2s" fill="freeze" />
     </path>
-    <path d="${fcLine}" fill="none" stroke="#27AE60" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-      stroke-dasharray="6 6" opacity="0">
-      <animate attributeName="opacity" from="0" to="1" begin="1.4s" dur="0.4s" fill="freeze" />
-    </path>
-    ${points.map((p, i) => `
-      <circle cx="${p[0]}" cy="${p[1]}" r="${i === REV.length - 1 ? 6 : 4}"
-        fill="${i >= REV.length ? '#E8FF8B' : (i === REV.length - 1 ? '#E8FF8B' : '#0B6E4F')}"
-        stroke="#fff" stroke-width="2" />
-    `).join('')}
     ${labels.map((m, i) => {
       const x = PAD_X + i * stepX;
-      const isFc = i >= REV.length;
       return `<text x="${x}" y="${H + 18}" text-anchor="middle"
-        style="font-family: Inter, sans-serif; font-size: 11px; font-weight: 600; fill: ${isFc ? '#9AA8A2' : '#4A5C56'};">${m}</text>`;
+        style="font-family: Inter, sans-serif; font-size: 11px; font-weight: 600; fill: #4A5C56;">${m}</text>`;
     }).join('')}
   `;
-  wrap.appendChild(svg);
+  // Add interactive points as DOM nodes so we can attach listeners
+  const NS = 'http://www.w3.org/2000/svg';
+  // A vertical guide line revealed on hover
+  const guide = document.createElementNS(NS, 'line');
+  guide.setAttribute('stroke', '#0B6E4F');
+  guide.setAttribute('stroke-width', '1');
+  guide.setAttribute('stroke-dasharray', '3 4');
+  guide.setAttribute('opacity', '0');
+  svg.appendChild(guide);
 
-  const legend = el('div', { class: 'flex items-center gap-5 mt-4 text-[11.5px]' },
-    el('span', { class: 'flex items-center gap-2' },
-      el('span', { class: 'w-3 h-3 rounded-full', style: { background: '#0B6E4F' } }),
-      el('span', { class: 'text-ink-2 font-semibold' }, 'Actual'),
-    ),
-    el('span', { class: 'flex items-center gap-2' },
-      el('span', { class: 'w-3 h-3 rounded-full', style: { background: '#E8FF8B', border: '2px solid #27AE60' } }),
-      el('span', { class: 'text-ink-2 font-semibold' }, 'AI forecast'),
-    ),
-  );
-  wrap.appendChild(legend);
+  points.forEach(p => {
+    // Visible dot
+    const c = document.createElementNS(NS, 'circle');
+    c.setAttribute('cx', p.x);
+    c.setAttribute('cy', p.y);
+    c.setAttribute('r', '4');
+    c.setAttribute('fill', '#0B6E4F');
+    c.setAttribute('stroke', '#fff');
+    c.setAttribute('stroke-width', '2');
+    svg.appendChild(c);
+
+    // Larger transparent hit-area for easier hover/tap
+    const hit = document.createElementNS(NS, 'circle');
+    hit.setAttribute('cx', p.x);
+    hit.setAttribute('cy', p.y);
+    hit.setAttribute('r', '18');
+    hit.setAttribute('fill', 'transparent');
+    hit.style.cursor = 'pointer';
+    const show = () => {
+      c.setAttribute('r', '6');
+      c.setAttribute('fill', '#E8FF8B');
+      c.setAttribute('stroke', '#0B6E4F');
+      guide.setAttribute('x1', p.x);
+      guide.setAttribute('x2', p.x);
+      guide.setAttribute('y1', PAD_Y);
+      guide.setAttribute('y2', H - PAD_Y);
+      guide.setAttribute('opacity', '0.6');
+      const rect = svg.getBoundingClientRect();
+      const scaleX = rect.width / W;
+      const scaleY = rect.height / (H + 28);
+      tip.style.left = (p.x * scaleX) + 'px';
+      tip.style.top = (p.y * scaleY) + 'px';
+      tip.innerHTML = `<div style="font-size:10.5px;opacity:0.7;text-transform:uppercase;letter-spacing:0.08em;">${p.label}</div><div style="font-size:14px;margin-top:2px;">${fmt(p.v)}</div>`;
+      tip.style.opacity = '1';
+    };
+    const hide = () => {
+      c.setAttribute('r', '4');
+      c.setAttribute('fill', '#0B6E4F');
+      c.setAttribute('stroke', '#fff');
+      guide.setAttribute('opacity', '0');
+      tip.style.opacity = '0';
+    };
+    hit.addEventListener('mouseenter', show);
+    hit.addEventListener('mouseleave', hide);
+    hit.addEventListener('touchstart', e => { e.preventDefault(); show(); });
+    hit.addEventListener('touchend', hide);
+    svg.appendChild(hit);
+  });
+
+  wrap.appendChild(svg);
   return wrap;
 }
 
@@ -255,17 +320,14 @@ function buildRevenueChart() {
 function buildRecentTxs(navigate) {
   const card = el('div', { class: 'card p-6' });
   card.appendChild(el('div', { class: 'flex items-center justify-between mb-4' },
-    el('div', {},
-      el('h3', { class: 'font-display text-[18px] font-extrabold text-squad-deep', style: { letterSpacing: '-0.02em' } }, 'Recent transactions'),
-      el('p', { class: 'text-[12.5px] text-ink-3 mt-0.5' }, 'AI auto-tagged in real time'),
-    ),
+    el('h3', { class: 'font-display text-[18px] font-extrabold text-squad-deep', style: { letterSpacing: '-0.02em' } }, 'Recent transactions'),
     el('button', {
       class: 'btn btn-ghost !py-2 !px-4 !text-[12.5px]',
       onClick: () => navigate('#/app/transactions'),
     }, 'View all', icon('arrow-right')),
   ));
   const list = el('div', { class: 'divide-y divide-line' });
-  TXS.slice(0, 6).forEach(tx => list.appendChild(TxRow(tx, { showCategory: true, categorize })));
+  getAllTransactions().slice(0, 6).forEach(tx => list.appendChild(TxRow(tx, { showCategory: false, categorize })));
   card.appendChild(list);
   return card;
 }
@@ -273,100 +335,25 @@ function buildRecentTxs(navigate) {
 // ── Loan offer ────────────────────────────────────────────────
 function buildLoanOfferCard(navigate) {
   const r = recommendLoan('stock');
-  const card = el('div', {
-    class: 'rounded-2xl p-5 relative overflow-hidden',
-    style: {
-      background: 'linear-gradient(135deg, #E8FF8B 0%, #C5F362 100%)',
-      boxShadow: '0 12px 28px rgba(232, 255, 139, 0.45)',
-    },
-  });
+  const card = el('div', { class: 'card p-5' });
   card.appendChild(el('div', { class: 'flex items-center gap-2 mb-3' },
-    el('span', { class: 'text-squad-deep', style: { fontSize: '14px' } }, icon('stars')),
-    el('span', { class: 'text-[10.5px] font-extrabold uppercase tracking-[0.15em] text-squad-deep' },
-      'AI-recommended loan'),
+    el('div', {
+      class: 'w-8 h-8 rounded-lg flex items-center justify-center',
+      style: { background: '#E8F4EE', color: '#0B6E4F', fontSize: '14px' },
+    }, icon('cash-coin')),
+    el('span', { class: 'text-[12px] font-bold text-ink-2' }, 'You qualify for a loan'),
   ));
   card.appendChild(el('div', {
-    class: 'font-display text-[32px] font-extrabold text-squad-deep',
+    class: 'font-display text-[28px] font-extrabold text-squad-deep',
     style: { letterSpacing: '-0.025em' },
   }, fmt(r.amount)));
-  card.appendChild(el('div', { class: 'text-[12.5px] text-squad-deep/80 -mt-0.5' },
-    `${r.rate}% / month · ${r.term} term`));
-
-  const why = el('div', { class: 'mt-4 p-3 rounded-xl bg-white/40 border border-white/60' });
-  why.appendChild(el('div', { class: 'text-[10.5px] uppercase tracking-wider font-extrabold text-squad-deep mb-1' },
-    'Why this amount?'));
-  why.appendChild(el('p', { class: 'text-[12px] text-squad-deep/85 leading-relaxed' }, r.reasons[0]));
-  card.appendChild(why);
+  card.appendChild(el('div', { class: 'text-[12px] text-ink-3 mt-0.5' },
+    `${r.rate}% / month · ${r.term}`));
 
   card.appendChild(el('button', {
-    class: 'btn btn-dark w-full !py-3 mt-4 !text-[13px]',
+    class: 'btn btn-primary w-full !py-3 mt-4 !text-[13px]',
     onClick: () => navigate('#/app/loans'),
-  }, 'Continue', icon('arrow-right')));
+  }, 'See loan options', icon('arrow-right')));
 
-  return card;
-}
-
-// ── Alerts ────────────────────────────────────────────────────
-function buildAlertsCard() {
-  const card = el('div', { class: 'card p-6' });
-  card.appendChild(el('div', { class: 'flex items-center justify-between mb-4' },
-    el('h3', { class: 'font-display text-[16px] font-extrabold text-squad-deep', style: { letterSpacing: '-0.02em' } }, 'Smart alerts'),
-    el('span', { class: 'chip', style: { background: '#E8F4EE', color: '#0B6E4F' } }, icon('stars'), 'AI'),
-  ));
-  const list = el('div', { class: 'space-y-3' });
-  const alertIcon = {
-    opportunity: 'lightning-charge-fill',
-    risk: 'exclamation-triangle-fill',
-    info: 'info-circle-fill',
-  };
-  detectAlerts().forEach((a, i) => {
-    const tone = a.kind === 'opportunity' ? { bg: '#E5F9F0', accent: '#27AE60' }
-              : a.kind === 'risk'         ? { bg: '#FCE8E8', accent: '#D43E3E' }
-              : { bg: '#FFF8DA', accent: '#B58400' };
-    list.appendChild(el('div', {
-      class: 'flex gap-3 p-3 rounded-xl',
-      style: { background: tone.bg, animation: `fadeUp 0.5s ${0.1 + i * 0.07}s cubic-bezier(0.22,1,0.36,1) both` },
-    },
-      el('div', {
-        class: 'flex-shrink-0 mt-0.5',
-        style: { color: tone.accent, fontSize: '17px', lineHeight: '1' },
-      }, icon(alertIcon[a.kind] || 'info-circle-fill')),
-      el('div', {},
-        el('div', { class: 'text-[12.5px] font-extrabold mb-0.5', style: { color: tone.accent } }, a.title),
-        el('div', { class: 'text-[11.5px] text-ink-2 leading-relaxed' }, a.body),
-      ),
-    ));
-  });
-  card.appendChild(list);
-  return card;
-}
-
-// ── Forecast ──────────────────────────────────────────────────
-function buildForecastCard() {
-  const fc = forecastNextMonths(3);
-  const months = ['May', 'Jun', 'Jul'];
-  const card = el('div', { class: 'card p-6' });
-  card.appendChild(el('h3', {
-    class: 'font-display text-[16px] font-extrabold text-squad-deep mb-1',
-    style: { letterSpacing: '-0.02em' },
-  }, 'Revenue forecast'));
-  card.appendChild(el('p', { class: 'text-[11.5px] text-ink-3 mb-4' },
-    'AI projection · linear regression on Squad data'));
-  const list = el('div', { class: 'space-y-3' });
-  fc.forEach((v, i) => list.appendChild(el('div', {
-    class: 'flex items-center justify-between p-3 rounded-xl',
-    style: { background: i === 0 ? '#E8F4EE' : '#FAFAF6', border: '1px solid ' + (i === 0 ? '#0B6E4F' : '#E2E8E4') },
-  },
-    el('div', {},
-      el('div', { class: 'text-[12px] uppercase tracking-wider font-bold text-ink-3' },
-        months[i] + (i === 0 ? ' · Next month' : '')),
-      el('div', { class: 'font-display text-[20px] font-extrabold text-squad-deep mt-0.5' }, fmt(v)),
-    ),
-    el('div', {
-      class: 'chip',
-      style: { background: '#fff', color: '#0B6E4F', border: '1px solid #E2E8E4' },
-    }, icon('arrow-up-short'), Math.round(((v / REV[REV.length - 1]) - 1) * 100) + '%'),
-  )));
-  card.appendChild(list);
   return card;
 }

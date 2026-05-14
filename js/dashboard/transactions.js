@@ -1,21 +1,22 @@
 import { el, fmt, icon } from '../utils.js';
-import { TXS } from '../data.js';
+import { getAllTransactions } from '../store.js';
 import { categorize } from '../ai.js';
 
 export function Transactions({ navigate }) {
   const root = el('div', { class: 'max-w-[1280px] mx-auto space-y-6' });
   let filter = 'all';
   let category = null;
+  const all = getAllTransactions();
 
   // ── Header KPIs ──────────────────────────────────────────
-  const inflow  = TXS.filter(t => t.type === 'in').reduce((s, t) => s + t.amount, 0);
-  const outflow = TXS.filter(t => t.type === 'out').reduce((s, t) => s + t.amount, 0);
+  const inflow  = all.filter(t => t.type === 'in').reduce((s, t) => s + t.amount, 0);
+  const outflow = all.filter(t => t.type === 'out').reduce((s, t) => s + t.amount, 0);
 
   root.appendChild(el('div', { class: 'grid grid-cols-2 lg:grid-cols-4 gap-4 fade-up' },
-    KpiSm('Total inflow',  fmt(inflow),  TXS.filter(t => t.type === 'in').length + ' transactions',  '#27AE60', 'arrow-down-circle'),
-    KpiSm('Total outflow', fmt(outflow), TXS.filter(t => t.type === 'out').length + ' transactions', '#D4711F', 'arrow-up-circle'),
+    KpiSm('Total inflow',  fmt(inflow),  all.filter(t => t.type === 'in').length + ' transactions',  '#27AE60', 'arrow-down-circle'),
+    KpiSm('Total outflow', fmt(outflow), all.filter(t => t.type === 'out').length + ' transactions', '#D4711F', 'arrow-up-circle'),
     KpiSm('Net flow',      fmt(inflow - outflow), 'Last 30 days', '#0B6E4F', 'graph-up-arrow'),
-    KpiSm('Categories',    Object.keys(buildCategoryMap()).length, 'AI-detected types', '#6C5CE7', 'tags'),
+    KpiSm('Categories',    Object.keys(buildCategoryMap(all)).length, 'AI-detected types', '#6C5CE7', 'tags'),
   ));
 
   // ── Filters bar ──────────────────────────────────────────
@@ -57,7 +58,7 @@ export function Transactions({ navigate }) {
 
   // ── Category chips ──────────────────────────────────────
   const catBar = el('div', { class: 'flex flex-wrap gap-2 fade-up-2' });
-  const cats = buildCategoryMap();
+  const cats = buildCategoryMap(all);
   const allBtn = el('button', {
     class: 'chip px-4 py-2 cursor-pointer tap',
     'data-cat': '__all',
@@ -101,7 +102,7 @@ export function Transactions({ navigate }) {
 
   function render() {
     list.innerHTML = '';
-    let visible = TXS.filter(t => filter === 'all' || t.type === filter);
+    let visible = all.filter(t => filter === 'all' || t.type === filter);
     if (category) visible = visible.filter(t => categorize(t).category === category);
     if (!visible.length) {
       list.appendChild(el('div', { class: 'p-8 text-center text-ink-3 text-[13px]' },
@@ -145,22 +146,46 @@ function buildRow(tx) {
 }
 
 function KpiSm(label, value, sub, accent, iconName) {
-  return el('div', { class: 'card p-4' },
-    el('div', { class: 'flex items-center gap-2' },
-      iconName ? el('span', { style: { color: accent, fontSize: '15px' } }, icon(iconName)) : null,
-      el('div', { class: 'text-[10.5px] uppercase tracking-[0.1em] text-ink-3 font-bold' }, label),
+  return el('div', { class: 'card p-4 relative overflow-hidden' },
+    el('div', {
+      style: {
+        position: 'absolute', left: 0, right: 0, top: 0, height: '3px',
+        background: `linear-gradient(90deg, ${accent}, ${accent}99)`,
+      },
+    }),
+    el('div', {
+      style: {
+        position: 'absolute', top: '-30px', right: '-30px',
+        width: '90px', height: '90px', borderRadius: '50%',
+        background: `radial-gradient(circle, ${accent}1A, transparent 70%)`,
+        pointerEvents: 'none',
+      },
+    }),
+    el('div', { class: 'flex items-center gap-2 relative' },
+      iconName ? el('div', {
+        class: 'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
+        style: {
+          background: `linear-gradient(135deg, ${accent}, ${accent}CC)`,
+          color: '#fff', fontSize: '14px',
+          boxShadow: `0 6px 14px -4px ${accent}66`,
+        },
+      }, icon(iconName)) : null,
+      el('div', {
+        class: 'text-[11px] uppercase tracking-[0.12em] font-extrabold',
+        style: { color: accent },
+      }, label),
     ),
     el('div', {
-      class: 'font-display font-extrabold text-squad-deep mt-1.5',
+      class: 'font-display font-extrabold text-squad-deep mt-2 relative',
       style: { fontSize: '24px', letterSpacing: '-0.025em' },
     }, value),
-    el('div', { class: 'text-[11px] mt-0.5 text-ink-3' }, sub),
+    el('div', { class: 'text-[11px] mt-0.5 font-semibold relative', style: { color: accent, opacity: 0.85 } }, sub),
   );
 }
 
-function buildCategoryMap() {
+function buildCategoryMap(list) {
   const map = {};
-  TXS.forEach(t => {
+  (list || getAllTransactions()).forEach(t => {
     const c = categorize(t);
     map[c.category] = map[c.category] || { color: c.color, count: 0 };
     map[c.category].count += 1;

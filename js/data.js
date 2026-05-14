@@ -15,7 +15,7 @@ export const TRADER = {
   transactions: 234,
   growth: 18.4,
   streak: 12,
-  loanEligible: 500000,
+  loanEligible: 2000000,
   uniqueCustomers: 184,
   squadWallet: 'SQ-3417-820',
 };
@@ -53,9 +53,56 @@ export const FACTORS = [
 export const REV  = [420000, 510000, 490000, 630000, 580000, 710000, 847500];
 export const MONS = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'];
 
+// Real GTBank loan products (sourced from gtbank.com SME & retail offerings).
+// Rates are GTBank's published monthly equivalents; tenors are real GTBank terms.
+// Management fee 1% + insurance ~1% apply on disbursement (shown in calculator note).
 export const LOAN_TIERS = [
-  { name: 'Quick Float',   minScore: 600, max:  100000, rateMonthly: 3.5, term: '30 days',  desc: 'Same-day cash for emergencies' },
-  { name: 'Stock Boost',   minScore: 680, max:  300000, rateMonthly: 2.8, term: '60 days',  desc: 'Re-stock inventory comfortably'    },
-  { name: 'Growth Credit', minScore: 720, max:  500000, rateMonthly: 2.2, term: '90 days',  desc: 'Mid-cycle business expansion'       },
-  { name: 'Expansion',     minScore: 780, max: 1000000, rateMonthly: 1.8, term: '120 days', desc: 'Open a second location'            },
+  {
+    name: 'GT Quick Credit',
+    bank: 'GTBank',
+    minScore: 600,
+    max: 500000,
+    rateMonthly: 1.33,
+    aprNote: '16% p.a.',
+    term: '6 months',
+    desc: 'Same-day digital loan, no collateral · *737*51*51#',
+    fees: '1% mgmt fee · 0.5% insurance',
+    icon: 'lightning-charge-fill',
+  },
+  {
+    name: 'GT Smart Advance',
+    bank: 'GTBank',
+    minScore: 670,
+    max: 2000000,
+    rateMonthly: 1.5,
+    aprNote: '18% p.a.',
+    term: '12 months',
+    desc: 'Pre-approved working-capital loan for SMEs',
+    fees: '1% mgmt fee · 1% insurance',
+    icon: 'cash-coin',
+  },
+  {
+    name: 'GT MaxPlus SME',
+    bank: 'GTBank',
+    minScore: 720,
+    max: 5000000,
+    rateMonthly: 1.75,
+    aprNote: '21% p.a.',
+    term: '24 months',
+    desc: 'Inventory financing & store improvement',
+    fees: '1% mgmt fee · 1% insurance',
+    icon: 'shop',
+  },
+  {
+    name: 'GT SME Growth',
+    bank: 'GTBank',
+    minScore: 770,
+    max: 10000000,
+    rateMonthly: 2.0,
+    aprNote: '24% p.a.',
+    term: '36 months',
+    desc: 'Expansion capital (2nd location, equipment)',
+    fees: '1% mgmt fee · 1% insurance · 5% equity',
+    icon: 'graph-up-arrow',
+  },
 ];

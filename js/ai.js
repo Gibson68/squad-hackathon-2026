@@ -20,7 +20,7 @@ export function generateScoreInsight() {
     body: [
       `${TRADER.firstName}, your TradeScore of ${TRADER.score} reflects ${TRADER.streak} months of strong, consistent inflows from ${TRADER.transactions} customers.`,
       `Your strongest factor is **${top.label}** (${top.value}/100) — ${top.desc.toLowerCase()}.`,
-      `The biggest lift remaining is **${weak.label}** (${weak.value}/100). If you can grow this 6 points, your score should cross 760 within 4–6 weeks, unlocking the ₦1M tier at 1.8% / month.`,
+      `The biggest lift remaining is **${weak.label}** (${weak.value}/100). If you can grow this 6 points, your score should cross 770 within 4–6 weeks, unlocking GT SME Growth — up to ₦10M at 2% / month.`,
     ],
     delta: '+12 points this week',
     confidence: 0.92,
@@ -38,7 +38,7 @@ export function recommendLoan(purpose = 'stock') {
     stock: [
       'Stock-up loans match your inflow rhythm — you historically clear inventory in 35–45 days.',
       `At ₦${recommended.toLocaleString()}, monthly repayment stays under 18% of average revenue.`,
-      'Lower default risk → 2.2% / month rate available.',
+      'Low default risk → GT Smart Advance at 1.5% / month is available.',
     ],
     rent: [
       'Rent loans should match your highest-income month so cash isn’t tight after.',
@@ -52,8 +52,8 @@ export function recommendLoan(purpose = 'stock') {
 
   return {
     amount: Math.min(recommended * 2, TRADER.loanEligible),
-    term: '60 days',
-    rate: 2.2,
+    term: '12 months',
+    rate: 1.5,
     reasons: reasons[purpose] || reasons.stock,
     confidence: 0.88,
   };
@@ -91,7 +91,21 @@ const CAT_RULES = [
   { match: /transport|fuel/i, category: 'Logistics', color: '#1F8A65' },
   { match: /electric|water|nepa/i, category: 'Utilities', color: '#E74C3C' },
 ];
+const CAT_COLORS = {
+  'Fashion': '#7C5CFF',
+  'Food & Drinks': '#E89B2A',
+  'Electronics': '#1F8A65',
+  'Beauty': '#FF7A59',
+  'Groceries': '#27AE60',
+  'Sales': '#27AE60',
+  'Inventory': '#E89B2A',
+  'Rent': '#6C5CE7',
+  'Logistics': '#1F8A65',
+  'Utilities': '#E74C3C',
+  'Other': '#9AA8A2',
+};
 export function categorize(tx) {
+  if (tx.category) return { category: tx.category, color: CAT_COLORS[tx.category] || '#9AA8A2' };
   for (const r of CAT_RULES)
     if (r.match.test(tx.name)) return { category: r.category, color: r.color };
   return { category: 'Other', color: '#9AA8A2' };
@@ -133,7 +147,7 @@ export async function chatRespond(message, _history = []) {
     return `You served ${TRADER.transactions} unique customer interactions this month, mostly between 11am–3pm. Repeat-customer rate is ~62% — strong for ${TRADER.business.toLowerCase()}. Promoting your Squad QR at the till would push Customer Diversity higher.`;
   }
   if (/rate|interest|fee/.test(m)) {
-    return `Because your score is above 720, you qualify for our **Growth Credit** tier: 2.2% / month over 90 days. That's roughly 1/16th the cost of typical Nigerian loan apps for the same amount.`;
+    return `Because your score is above 720, you qualify for **GT MaxPlus SME**: 1.75% / month over 24 months (21% APR), with a 1% management fee and 1% insurance. That's roughly 1/14th the cost of typical Nigerian loan apps for the same amount.`;
   }
   if (/repay|pay back|installment/.test(m)) {
     return `Repayments auto-debit from your Squad wallet on the day of each scheduled instalment — you don't have to remember anything. If your inflow dips, we offer a one-time grace period without affecting your score.`;

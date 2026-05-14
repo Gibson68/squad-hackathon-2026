@@ -1,8 +1,10 @@
-import { el, fmt, icon, iconTile } from '../utils.js';
+import { el, fmt, icon, iconTile, toast, openModal } from '../utils.js';
 import {
   getUser, getInventory, addInventoryItem, updateInventoryItem, removeInventoryItem,
+  recordSale, getSalesToday,
   CATALOG, DEFAULT_PRICE,
 } from '../store.js';
+import { createPaymentLink, generateReference } from '../payments.js';
 
 const CATEGORIES = Object.keys(CATALOG);
 
@@ -242,8 +244,12 @@ export function InventoryPanel() {
     el('p', { class: 'text-[12px] text-ink-3 mt-0.5' },
       'Tap − or + under any price to adjust. Quantity controls are on the right.'),
   ));
+  const headerChips = el('div', { class: 'flex items-center gap-2 flex-wrap' });
+  const salesChip = el('span', { class: 'chip', style: { background: '#E5F9F0', color: '#27AE60' } });
   const totalChip = el('span', { class: 'chip', style: { background: '#022B23', color: '#E8FF8B' } });
-  listHeader.appendChild(totalChip);
+  headerChips.appendChild(salesChip);
+  headerChips.appendChild(totalChip);
+  listHeader.appendChild(headerChips);
   listCard.appendChild(listHeader);
 
   const list = el('div', { class: 'divide-y divide-line -mx-2' });
@@ -264,6 +270,13 @@ export function InventoryPanel() {
     totalChip.innerHTML = '';
     totalChip.appendChild(el('span', {}, items.length + ' items · '));
     totalChip.appendChild(el('span', {}, fmt(totalValue) + ' total stock value'));
+
+    // Today's sales summary
+    const todays = getSalesToday();
+    const earned = todays.reduce((s, t) => s + t.total, 0);
+    salesChip.innerHTML = '';
+    salesChip.appendChild(el('span', { style: { fontSize: '11px', display: 'inline-flex', marginRight: '4px' } }, icon('cash-coin')));
+    salesChip.appendChild(el('span', {}, todays.length + ' sold today · ' + fmt(earned)));
   }
   renderList();
 
@@ -354,6 +367,27 @@ function buildRow(it, refresh) {
     }, icon('plus-lg')),
   ));
 
+  // Cash sale button — opens modal asking for units + generates payment link
+  const soldOut = it.qty <= 0;
+  const saleBtn = el('button', {
+    class: 'flex items-center gap-1.5 px-3 h-9 rounded-xl text-[12px] font-extrabold tap transition-all',
+    style: soldOut
+      ? { background: '#F5F5F0', color: '#9AA8A2', cursor: 'not-allowed' }
+      : { background: '#E8FF8B', color: '#022B23', boxShadow: '0 6px 14px rgba(232,255,139,0.45)' },
+    onClick: () => {
+      if (soldOut) {
+        toast(it.name + ' is out of stock', { iconName: 'exclamation-triangle-fill', color: '#D43E3E' });
+        return;
+      }
+      openCashSaleModal(it, refresh);
+    },
+    title: 'Record a cash sale',
+  },
+    el('span', { style: { fontSize: '13px', display: 'inline-flex' } }, icon('cash-coin')),
+    el('span', {}, soldOut ? 'Sold out' : 'Cash sale'),
+  );
+  row.appendChild(saleBtn);
+
   // Delete
   row.appendChild(el('button', {
     class: 'w-8 h-8 rounded-lg flex items-center justify-center text-ink-3 hover:bg-squad-paper hover:text-[#D43E3E]',
@@ -377,4 +411,254 @@ function flash(node, color) {
   const original = node.style.background;
   node.style.background = color;
   setTimeout(() => { node.style.background = original; }, 320);
+}
+
+// ── Cash-sale modal ────────────────────────────────────────────────
+// Asks for qty, computes total, calls payments.createPaymentLink (stub),
+// then shows a copy-/share-able checkout URL. Backend swap-point lives
+// in js/payments.js — UI here is agnostic of the provider.
+function openCashSaleModal(item, refresh) {
+  openModal(({ modal, close }) => {
+    const user = getUser();
+    let qty = 1;
+    let generating = false;
+    let result = null;   // payment-link response once created
+
+    modal.appendChild(el('div', { class: 'mb-4 pr-10' },
+      el('h3', {
+        class: 'font-display text-[20px] font-extrabold text-squad-deep',
+        style: { letterSpacing: '-0.02em' },
+      }, 'Cash sale'),
+      el('p', { class: 'text-[12.5px] text-ink-3 mt-0.5' },
+        'Confirm units and generate a payment link to share with the customer.'),
+    ));
+
+    // Item summary
+    modal.appendChild(el('div', {
+      class: 'p-4 rounded-2xl mb-4 flex items-center gap-3',
+      style: { background: '#FAFAF6', border: '1px solid #E2E8E4' },
+    },
+      iconTile('box-seam', { size: 44, fontSize: 17, bg: '#E8F4EE', color: '#0B6E4F', radius: 12 }),
+      el('div', { class: 'flex-1 min-w-0' },
+        el('div', { class: 'text-[14px] font-extrabold text-ink-1' }, item.name),
+        el('div', { class: 'text-[11.5px] text-ink-3' },
+          item.category + ' · ' + fmt(item.price) + ' / unit · ' + item.qty + ' in stock'),
+      ),
+    ));
+
+    // Qty stepper
+    modal.appendChild(el('div', { class: 'label' }, 'Units sold'));
+    const qtyWrap = el('div', { class: 'flex items-center gap-2' });
+    const qtyMinus = el('button', {
+      class: 'w-11 h-11 rounded-xl bg-white border border-line flex items-center justify-center text-ink-1 hover:bg-squad-paper',
+      style: { fontSize: '15px' },
+      type: 'button',
+      onClick: () => { if (qty > 1) { qty -= 1; qtyInput.value = String(qty); paint(); } },
+    }, icon('dash-lg'));
+    const qtyInput = el('input', {
+      class: 'input text-center !text-[18px] font-extrabold !py-2.5',
+      type: 'number', min: '1', max: String(item.qty), value: String(qty),
+    });
+    qtyInput.addEventListener('input', () => {
+      let n = parseInt(qtyInput.value, 10);
+      if (isNaN(n) || n < 1) n = 1;
+      if (n > item.qty) n = item.qty;
+      qty = n;
+      qtyInput.value = String(qty);
+      paint();
+    });
+    const qtyPlus = el('button', {
+      class: 'w-11 h-11 rounded-xl flex items-center justify-center text-white hover:opacity-90',
+      style: { background: '#0B6E4F', fontSize: '15px' },
+      type: 'button',
+      onClick: () => { if (qty < item.qty) { qty += 1; qtyInput.value = String(qty); paint(); } },
+    }, icon('plus-lg'));
+    qtyWrap.appendChild(qtyMinus);
+    qtyWrap.appendChild(qtyInput);
+    qtyWrap.appendChild(qtyPlus);
+    modal.appendChild(qtyWrap);
+
+    // Total
+    const totalCard = el('div', {
+      class: 'mt-4 p-5 rounded-2xl flex items-center justify-between',
+      style: { background: 'linear-gradient(135deg, #022B23 0%, #0B6E4F 100%)' },
+    });
+    const totalLabel = el('div', {},
+      el('div', { class: 'text-[10.5px] uppercase tracking-widest font-bold', style: { color: '#E8FF8B' } },
+        'Customer pays'),
+      el('div', { class: 'text-[11px] mt-0.5', style: { color: 'rgba(255,255,255,0.7)' } }, ''),
+    );
+    const totalValue = el('div', {
+      class: 'font-display font-extrabold text-white',
+      style: { fontSize: '28px', letterSpacing: '-0.025em' },
+    }, '');
+    totalCard.appendChild(totalLabel);
+    totalCard.appendChild(totalValue);
+    modal.appendChild(totalCard);
+
+    // Result area (filled after generation)
+    const resultBox = el('div', { class: 'mt-4' });
+    modal.appendChild(resultBox);
+
+    // Action row
+    const actions = el('div', { class: 'flex gap-2 mt-5' });
+    const cancelBtn = el('button', {
+      class: 'btn btn-ghost flex-1',
+      type: 'button',
+      onClick: close,
+    }, 'Cancel');
+    const genBtn = el('button', {
+      class: 'btn btn-primary flex-1',
+      type: 'button',
+      onClick: doGenerate,
+    });
+    actions.appendChild(cancelBtn);
+    actions.appendChild(genBtn);
+    modal.appendChild(actions);
+
+    function paint() {
+      const total = item.price * qty;
+      totalValue.textContent = fmt(total);
+      totalLabel.querySelector('div:last-child').textContent =
+        qty + ' × ' + fmt(item.price);
+      genBtn.innerHTML = '';
+      if (generating) {
+        genBtn.appendChild(el('span', { class: 'inline-flex items-center gap-2' },
+          el('span', { style: { fontSize: '14px' } }, icon('arrow-clockwise')),
+          el('span', {}, 'Generating…'),
+        ));
+        genBtn.disabled = true;
+      } else if (result) {
+        genBtn.appendChild(el('span', { class: 'inline-flex items-center gap-2' },
+          icon('check-lg'),
+          el('span', {}, 'Mark as paid'),
+        ));
+        genBtn.disabled = false;
+      } else {
+        genBtn.appendChild(el('span', { class: 'inline-flex items-center gap-2' },
+          icon('link-45deg'),
+          el('span', {}, 'Generate payment link'),
+        ));
+        genBtn.disabled = false;
+      }
+    }
+    paint();
+
+    async function doGenerate() {
+      // Second click after generation → record the sale and close
+      if (result) {
+        const r = recordSale(item, qty);
+        if (r.ok) {
+          toast('Sale recorded · ' + qty + ' × ' + item.name, { iconName: 'check-circle-fill' });
+          refresh();
+          close();
+        } else {
+          toast('Not enough stock', { iconName: 'exclamation-triangle-fill', color: '#D43E3E' });
+        }
+        return;
+      }
+      generating = true; paint();
+      try {
+        const amount = item.price * qty;
+        result = await createPaymentLink({
+          item,
+          qty,
+          amount,
+          currency: 'NGN',
+          reference: generateReference('TS'),
+          customer: { name: user.name, business: user.business, walletId: user.squadWallet },
+        });
+        renderResult(result, amount);
+      } catch (err) {
+        toast('Could not generate link · ' + (err?.message || 'try again'),
+          { iconName: 'exclamation-triangle-fill', color: '#D43E3E' });
+      } finally {
+        generating = false; paint();
+      }
+    }
+
+    function renderResult(res, amount) {
+      resultBox.innerHTML = '';
+      const card = el('div', {
+        class: 'p-4 rounded-2xl',
+        style: { background: '#E8FF8B', border: '1px solid #C5F362' },
+      });
+      card.appendChild(el('div', { class: 'flex items-center gap-2 mb-2' },
+        el('span', { style: { color: '#022B23', fontSize: '14px' } }, icon('check-circle-fill')),
+        el('span', { class: 'text-[11px] uppercase tracking-widest font-extrabold text-squad-deep' },
+          'Payment link ready'),
+      ));
+      // URL row
+      const urlField = el('div', {
+        class: 'flex items-center gap-1 p-2 rounded-xl bg-white border border-line',
+      },
+        el('span', { style: { fontSize: '13px', color: '#0B6E4F', padding: '0 6px' } }, icon('link-45deg')),
+        el('input', {
+          class: 'flex-1 bg-transparent outline-none text-[12.5px] font-mono text-ink-1',
+          value: res.url,
+          readonly: 'readonly',
+          onClick: e => e.target.select(),
+        }),
+        el('button', {
+          class: 'w-9 h-9 rounded-lg flex items-center justify-center text-white',
+          style: { background: '#0B6E4F', fontSize: '13px' },
+          title: 'Copy link',
+          onClick: () => {
+            navigator.clipboard?.writeText(res.url);
+            toast('Link copied to clipboard', { iconName: 'clipboard-check' });
+          },
+        }, icon('clipboard')),
+      );
+      card.appendChild(urlField);
+
+      // Share row
+      const shareRow = el('div', { class: 'flex flex-wrap gap-2 mt-3' });
+      const waMsg = encodeURIComponent(
+        `Hi! Please pay ${fmt(amount)} for ${qty} × ${item.name}.\nLink: ${res.url}\nRef: ${res.reference}`,
+      );
+      shareRow.appendChild(shareLink('whatsapp',  'WhatsApp', '#25D366', `https://wa.me/?text=${waMsg}`));
+      shareRow.appendChild(shareLink('envelope',  'Email',    '#0B6E4F', `mailto:?subject=Payment%20link&body=${waMsg}`));
+      shareRow.appendChild(shareLink('telephone', 'SMS',      '#1F8A65', `sms:?&body=${waMsg}`));
+      shareRow.appendChild(el('button', {
+        class: 'chip cursor-pointer',
+        style: { background: '#022B23', color: '#fff' },
+        onClick: () => {
+          if (navigator.share) {
+            navigator.share({ title: 'TradeScore payment', text: 'Pay ' + fmt(amount), url: res.url }).catch(() => {});
+          } else {
+            navigator.clipboard?.writeText(res.url);
+            toast('Link copied — paste it anywhere', { iconName: 'clipboard-check' });
+          }
+        },
+      }, icon('share-fill'), 'Share'));
+      card.appendChild(shareRow);
+
+      // Reference + meta
+      card.appendChild(el('div', { class: 'mt-3 grid grid-cols-2 gap-2 text-[11.5px] text-squad-deep/80' },
+        el('div', {}, el('span', { class: 'font-bold' }, 'Ref: '), res.reference),
+        el('div', { class: 'text-right' }, el('span', { class: 'font-bold' }, 'Provider: '), res.provider),
+      ));
+
+      resultBox.appendChild(card);
+      // Replace cancel with a "New link" reset
+      cancelBtn.textContent = '';
+      cancelBtn.appendChild(icon('arrow-clockwise'));
+      cancelBtn.appendChild(el('span', { class: 'ml-1' }, 'New link'));
+      cancelBtn.onclick = () => {
+        result = null;
+        resultBox.innerHTML = '';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.onclick = close;
+        paint();
+      };
+    }
+  });
+}
+
+function shareLink(iconName, label, color, href) {
+  return el('a', {
+    class: 'chip',
+    href, target: '_blank', rel: 'noopener',
+    style: { background: '#fff', color, border: '1px solid #E2E8E4', textDecoration: 'none' },
+  }, icon(iconName), label);
 }

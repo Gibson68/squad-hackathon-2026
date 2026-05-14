@@ -1,10 +1,12 @@
 // localStorage-backed user + inventory store.
 // Keeps signup details, profile edits and inventory persistent across sessions.
 
-import { TRADER } from './data.js';
+import { TRADER, TXS } from './data.js';
 
-const USER_KEY = 'tradescore_user';
-const INV_KEY  = 'tradescore_inventory';
+const USER_KEY  = 'tradescore_user';
+const INV_KEY   = 'tradescore_inventory';
+const SALES_KEY = 'tradescore_sales';
+const PREFS_KEY = 'tradescore_prefs';
 
 function read(key) {
   try { return JSON.parse(localStorage.getItem(key) || 'null'); }
@@ -28,6 +30,21 @@ export function getUser() {
       .map(p => p[0]?.toUpperCase()).join('') || TRADER.avatar;
   }
   if (saved.business) merged.business = saved.business;
+
+  // Live KPIs: stack cash sales recorded in-app on top of the historical base.
+  const sales = read(SALES_KEY) || [];
+  const baseRev   = TRADER.monthlyRevenue;
+  const baseTx    = TRADER.transactions;
+  const baseScore = TRADER.score;
+  const salesValue = sales.reduce((s, x) => s + x.total, 0);
+  const salesCount = sales.length;
+  merged.monthlyRevenue = baseRev + salesValue;
+  merged.transactions   = baseTx + salesCount;
+  // +2 pts per sale, capped at +50 so the demo doesn't run away
+  merged.scoreBoost     = Math.min(50, salesCount * 2);
+  merged.score          = baseScore + merged.scoreBoost;
+  merged.salesValue     = salesValue;
+  merged.salesCount     = salesCount;
   return merged;
 }
 export function saveUser(partial) {
@@ -58,6 +75,87 @@ export function removeInventoryItem(id) {
   const items = getInventory().filter(it => it.id !== id);
   saveInventory(items);
   return items;
+}
+
+// ── Sales ledger ───────────────────────────────────────────────
+// Cash-sale events: { id, itemId, name, category, price, qty, at }
+export function getSales() { return read(SALES_KEY) || []; }
+export function recordSale(item, qty = 1) {
+  const items = getInventory();
+  const found = items.find(i => i.id === item.id);
+  if (!found || found.qty < qty) return { ok: false, reason: 'out_of_stock' };
+  // decrement
+  updateInventoryItem(item.id, { qty: found.qty - qty });
+  const sales = getSales();
+  const sale = {
+    id: 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    itemId: item.id,
+    name: item.name,
+    category: item.category,
+    price: item.price,
+    qty,
+    total: item.price * qty,
+    at: Date.now(),
+  };
+  write(SALES_KEY, [sale, ...sales]);
+  return { ok: true, sale };
+}
+export function getSalesToday() {
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  return getSales().filter(s => s.at >= start.getTime());
+}
+
+// Inventory cash-sale → transaction-row shape.
+function saleToTx(s) {
+  return {
+    id: s.id,
+    name: `${s.qty}× ${s.name}`,
+    type: 'in',
+    amount: s.total,
+    time: relativeTime(s.at),
+    ref: 'INV-' + s.id.slice(-6).toUpperCase(),
+    category: s.category,
+    _sale: true,
+    _at: s.at,
+  };
+}
+
+function relativeTime(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  const isYest = d.toDateString() === yest.toDateString();
+  const hh = d.getHours();
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hh >= 12 ? 'PM' : 'AM';
+  const h12 = ((hh + 11) % 12) + 1;
+  const clock = `${h12}:${mm} ${ampm}`;
+  if (sameDay) return `Today, ${clock}`;
+  if (isYest) return `Yesterday, ${clock}`;
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ', ' + clock;
+}
+
+// Merged feed: inventory sales (newest first) + static mock TXS.
+export function getAllTransactions() {
+  const sales = getSales().map(saleToTx);
+  return [...sales, ...TXS];
+}
+
+// ── Preferences (notifications, AI tone, security PIN) ──────────
+export function getPrefs() {
+  return {
+    notifications: { email: true, sms: false, push: true },
+    ai: { tone: 'friendly', frequency: 'daily' },
+    security: { pin: null, twoFA: false },
+    ...(read(PREFS_KEY) || {}),
+  };
+}
+export function savePrefs(partial) {
+  const cur = getPrefs();
+  const next = { ...cur, ...partial };
+  write(PREFS_KEY, next);
+  return next;
 }
 
 // ── Catalog of preset items per signup category ────────────────

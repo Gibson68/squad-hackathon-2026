@@ -26,10 +26,10 @@ export function Landing({ navigate }) {
   navInner.appendChild(logo);
 
   const navLinks = el('nav', { class: 'hidden md:flex items-center gap-7 mx-auto' },
-    NavLink('How it works', '#how'),
-    NavLink('Features', '#features'),
-    NavLink('AI Insights', '#features'),
-    NavLink('For Squad', '#cta'),
+    NavLink('How it works', 'how'),
+    NavLink('Features',     'features'),
+    NavLink('AI Insights',  'ai-insights'),
+    NavLink('For Squad',    'cta'),
   );
   navInner.appendChild(navLinks);
 
@@ -113,8 +113,10 @@ export function Landing({ navigate }) {
   copy.appendChild(trust);
   heroInner.appendChild(copy);
 
-  // Right: AI demo card
-  heroInner.appendChild(buildAiDemoCard());
+  // Right: AI demo card (also serves as the "AI Insights" anchor)
+  const aiDemo = buildAiDemoCard();
+  aiDemo.id = 'ai-insights';
+  heroInner.appendChild(aiDemo);
   hero.appendChild(heroInner);
   root.appendChild(hero);
 
@@ -226,10 +228,18 @@ export function Landing({ navigate }) {
   return root;
 }
 
-function NavLink(label, href = '#') {
+function NavLink(label, targetId) {
   return el('a', {
-    class: 'text-[13.5px] font-medium text-ink-2 hover:text-squad-deep transition',
-    href,
+    class: 'text-[13.5px] font-medium text-ink-2 hover:text-squad-deep transition cursor-pointer',
+    href: 'javascript:void(0)',
+    onClick: (e) => {
+      e.preventDefault();
+      const target = document.getElementById(targetId);
+      if (target) {
+        const top = target.getBoundingClientRect().top + window.scrollY - 70;
+        window.scrollTo({ top, behavior: 'smooth' });
+      }
+    },
   }, label);
 }
 

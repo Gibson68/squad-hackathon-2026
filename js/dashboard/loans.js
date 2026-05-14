@@ -33,8 +33,11 @@ export function LoansPanel({ navigate }) {
     class: 'font-display font-extrabold text-white relative mt-1',
     style: { fontSize: '52px', lineHeight: '1.05', letterSpacing: '-0.04em' },
   }, fmt(TRADER.loanEligible)));
-  big.appendChild(el('div', { class: 'text-[14px] mt-1 relative', style: { color: 'rgba(255,255,255,0.7)' } },
-    `Based on TradeScore ${TRADER.score} · From 2.2% / month`));
+  big.appendChild(el('div', { class: 'flex items-center gap-2 mt-1 relative flex-wrap', style: { color: 'rgba(255,255,255,0.7)' } },
+    el('span', { class: 'text-[14px]' }, `Based on TradeScore ${TRADER.score} · From 1.33% / month`),
+    el('span', { class: 'chip', style: { background: 'rgba(232,255,139,0.18)', color: '#E8FF8B', fontSize: '10.5px' } },
+      icon('bank2'), 'GTBank partner rate'),
+  ));
 
   // AI rec
   const r = recommendLoan('stock');
@@ -55,21 +58,23 @@ export function LoansPanel({ navigate }) {
 
   // Right: 3 quick stats
   const right = el('div', { class: 'grid gap-4' });
-  right.appendChild(StatCard({ iconName: 'percent', label: 'Lowest rate available', value: '2.2%', sub: 'per month', accent: '#0B6E4F' }));
-  right.appendChild(StatCard({ iconName: 'calendar3', label: 'Max term', value: '120', sub: 'days', accent: '#1F8A65' }));
-  right.appendChild(StatCard({ iconName: 'lightning-charge', label: 'Funding speed', value: '< 5', sub: 'minutes', accent: '#27AE60' }));
+  right.appendChild(StatCard({ iconName: 'percent', label: 'GT lowest rate', value: '1.33%', sub: 'per month · Quick Credit', accent: '#0B6E4F' }));
+  right.appendChild(StatCard({ iconName: 'calendar3', label: 'Max tenor', value: '36', sub: 'months · MaxPlus SME', accent: '#1F8A65' }));
+  right.appendChild(StatCard({ iconName: 'lightning-charge', label: 'Funding speed', value: '< 5', sub: 'minutes via *737#', accent: '#27AE60' }));
   hero.appendChild(right);
 
   root.appendChild(hero);
 
   // ── Loan tiers grid ──────────────────────────────────────
   const tiersWrap = el('div', { class: 'fade-up-1' });
-  tiersWrap.appendChild(el('div', { class: 'flex items-center justify-between mb-4' },
+  tiersWrap.appendChild(el('div', { class: 'flex items-center justify-between mb-4 flex-wrap gap-2' },
     el('div', {},
-      el('h3', { class: 'font-display text-[20px] font-extrabold text-squad-deep' }, 'Loan products'),
+      el('h3', { class: 'font-display text-[20px] font-extrabold text-squad-deep' }, 'GTBank loan products'),
       el('p', { class: 'text-[12.5px] text-ink-3 mt-0.5' },
-        'Tiers unlock as your TradeScore grows. Tap any tier to apply.'),
+        'Live rates from GTBank — tiers unlock as your TradeScore grows.'),
     ),
+    el('span', { class: 'chip', style: { background: '#FFF4E0', color: '#7B5500' } },
+      icon('bank2'), 'Powered by GTBank'),
   ));
   const tiersGrid = el('div', { class: 'grid md:grid-cols-2 lg:grid-cols-4 gap-4' });
   LOAN_TIERS.forEach((t, i) => tiersGrid.appendChild(TierCard(t, TRADER.score >= t.minScore, i)));
@@ -83,63 +88,127 @@ export function LoansPanel({ navigate }) {
 }
 
 function StatCard({ iconName, label, value, sub, accent }) {
-  return el('div', { class: 'card p-5 flex items-center gap-4' },
+  return el('div', { class: 'card p-5 flex items-center gap-4 relative overflow-hidden' },
     el('div', {
-      class: 'w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0',
-      style: { background: '#E8F4EE', color: accent, fontSize: '20px' },
+      style: {
+        position: 'absolute', top: '-30px', right: '-30px',
+        width: '110px', height: '110px', borderRadius: '50%',
+        background: `radial-gradient(circle, ${accent}1F, transparent 70%)`,
+        pointerEvents: 'none',
+      },
+    }),
+    el('div', {
+      class: 'w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0',
+      style: {
+        background: `linear-gradient(135deg, ${accent}, ${shade(accent, 18)})`,
+        color: '#fff', fontSize: '20px',
+        boxShadow: `0 10px 22px -6px ${accent}66`,
+      },
     }, icon(iconName)),
-    el('div', { class: 'min-w-0' },
-      el('div', { class: 'text-[10.5px] uppercase tracking-[0.1em] text-ink-3 font-bold' }, label),
+    el('div', { class: 'min-w-0 relative' },
+      el('div', {
+        class: 'text-[11px] uppercase tracking-[0.12em] font-extrabold',
+        style: { color: accent },
+      }, label),
       el('div', { class: 'flex items-baseline gap-1.5 mt-0.5' },
         el('span', {
           class: 'font-display font-extrabold text-squad-deep',
           style: { fontSize: '28px', letterSpacing: '-0.025em' },
         }, value),
-        el('span', { class: 'text-[12.5px] font-medium', style: { color: accent } }, sub),
+        el('span', { class: 'text-[12.5px] font-bold', style: { color: accent } }, sub),
       ),
     ),
   );
 }
 
+// Lighten a hex colour by `amount` (0-100). Cheap & sufficient for tile gradients.
+function shade(hex, amount) {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = Math.min(255, ((num >> 16) & 0xff) + amount);
+  const g = Math.min(255, ((num >> 8)  & 0xff) + amount);
+  const b = Math.min(255, ( num        & 0xff) + amount);
+  return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
 function TierCard(t, eligible, i) {
+  // Tier-specific gradient
+  const TIER_THEMES = [
+    { from: '#FFB547', to: '#F5B947', glow: 'rgba(245,185,71,0.30)' },     // Quick Credit — sunny
+    { from: '#14855F', to: '#27AE60', glow: 'rgba(39,174,96,0.30)' },      // Smart Advance — green
+    { from: '#0B6E4F', to: '#1F8A65', glow: 'rgba(11,110,79,0.30)' },      // MaxPlus — deep green
+    { from: '#7C5CFF', to: '#A78BFA', glow: 'rgba(124,92,255,0.30)' },     // Growth — premium violet
+  ];
+  const theme = TIER_THEMES[i] || TIER_THEMES[0];
+
   const card = el('div', {
-    class: 'card p-5 ' + (eligible ? 'card-hover cursor-pointer' : 'opacity-60'),
-    style: { animation: `fadeUp 0.5s ${0.05 + i * 0.06}s cubic-bezier(0.22,1,0.36,1) both` },
+    class: 'card p-5 relative overflow-hidden ' + (eligible ? 'card-hover' : ''),
+    style: {
+      opacity: eligible ? '1' : '0.65',
+      animation: `fadeUp 0.5s ${0.05 + i * 0.06}s cubic-bezier(0.22,1,0.36,1) both`,
+    },
   });
-  card.appendChild(el('div', { class: 'flex items-center justify-between mb-3' },
+
+  // Top gradient strip
+  card.appendChild(el('div', {
+    style: {
+      position: 'absolute', left: 0, right: 0, top: 0, height: '4px',
+      background: `linear-gradient(90deg, ${theme.from}, ${theme.to})`,
+    },
+  }));
+
+  // Decorative halo
+  if (eligible) card.appendChild(el('div', {
+    style: {
+      position: 'absolute', top: '-50px', right: '-50px',
+      width: '160px', height: '160px', borderRadius: '50%',
+      background: `radial-gradient(circle, ${theme.glow}, transparent 70%)`,
+      pointerEvents: 'none',
+    },
+  }));
+
+  card.appendChild(el('div', { class: 'flex items-center justify-between mb-4 relative' },
     el('div', {
-      class: 'w-10 h-10 rounded-xl flex items-center justify-center',
+      class: 'w-12 h-12 rounded-2xl flex items-center justify-center',
       style: {
-        background: eligible ? '#E8F4EE' : '#F5F5F0',
-        color: eligible ? '#0B6E4F' : '#9AA8A2',
-        fontSize: '17px',
+        background: eligible ? `linear-gradient(135deg, ${theme.from}, ${theme.to})` : '#F5F5F0',
+        color: eligible ? '#fff' : '#9AA8A2',
+        fontSize: '19px',
+        boxShadow: eligible ? `0 10px 24px -6px ${theme.glow}` : 'none',
       },
-    }, icon(eligible ? 'unlock-fill' : 'lock-fill')),
+    }, icon(t.icon || (eligible ? 'unlock-fill' : 'lock-fill'))),
     el('span', {
       class: 'chip',
       style: eligible
-        ? { background: '#E5F9F0', color: '#27AE60' }
+        ? { background: 'linear-gradient(135deg, #E5F9F0, #C8F2D6)', color: '#0B6E4F' }
         : { background: '#F5F5F0', color: '#9AA8A2' },
-    }, eligible ? 'Eligible' : `Need ${t.minScore}+`),
+    },
+      eligible ? el('span', { style: { fontSize: '7px' } }, '●') : null,
+      eligible ? 'Eligible' : `Need ${t.minScore}+`,
+    ),
   ));
   card.appendChild(el('h4', {
-    class: 'font-display text-[18px] font-extrabold text-squad-deep',
+    class: 'font-display text-[17px] font-extrabold text-squad-deep relative',
     style: { letterSpacing: '-0.02em' },
   }, t.name));
-  card.appendChild(el('p', { class: 'text-[12px] text-ink-3 mt-0.5 mb-4' }, t.desc));
-  card.appendChild(el('div', { class: 'flex items-baseline gap-1.5' },
-    el('span', { class: 'font-display font-extrabold text-squad-deep', style: { fontSize: '28px' } },
-      'Up to ' + fmt(t.max)),
+  card.appendChild(el('p', { class: 'text-[12px] text-ink-3 mt-0.5 mb-4 relative' }, t.desc));
+  card.appendChild(el('div', { class: 'flex items-baseline gap-1.5 relative' },
+    el('span', { class: 'text-[11px] text-ink-3 font-bold' }, 'Up to'),
+    el('span', { class: 'font-display font-extrabold text-squad-deep', style: { fontSize: '24px', letterSpacing: '-0.025em' } },
+      fmt(t.max)),
   ));
-  card.appendChild(el('div', { class: 'text-[12px] text-ink-2 mt-1' },
-    `${t.rateMonthly}% / month · ${t.term}`));
+  card.appendChild(el('div', { class: 'flex items-center justify-between mt-3 pt-3 relative', style: { borderTop: '1px dashed rgba(11,110,79,0.18)' } },
+    el('span', { class: 'text-[12.5px] font-extrabold', style: { color: theme.from } },
+      `${t.rateMonthly}% / mo`),
+    el('span', { class: 'text-[10.5px] text-ink-3 font-semibold' }, t.aprNote || ''),
+  ));
+  card.appendChild(el('div', { class: 'text-[11px] text-ink-3 mt-1 relative' }, t.term + (t.fees ? ' · ' + t.fees : '')));
   return card;
 }
 
 // ── Calculator ────────────────────────────────────────────────
 function buildCalculator(TRADER, navigate) {
-  let amount = 250000;
-  let term   = '60 days';
+  let amount = 500000;
+  let term   = '12 months';
 
   const card = el('div', { class: 'card p-6 lg:p-8 fade-up-2' });
   card.appendChild(el('div', { class: 'flex items-center justify-between mb-1' },
@@ -176,10 +245,10 @@ function buildCalculator(TRADER, navigate) {
     el('span', {}, fmt(TRADER.loanEligible)),
   ));
 
-  // Term selector
+  // Term selector — GTBank standard SME tenors
   controls.appendChild(el('div', { class: 'label mt-7' }, 'Repayment period'));
   const termRow = el('div', { class: 'grid grid-cols-4 gap-2' });
-  ['30 days', '60 days', '90 days', '120 days'].forEach(t => {
+  ['6 months', '12 months', '24 months', '36 months'].forEach(t => {
     const btn = el('button', {
       class: 'h-12 rounded-xl font-bold text-[13px] tap text-center transition-all',
       'data-term': t,
@@ -267,21 +336,28 @@ function buildCalculator(TRADER, navigate) {
 
   function paint() {
     const rate = pickRate();
-    const months = parseInt(term, 10) / 30;
+    const months = parseInt(term, 10);
     const interest = Math.round(amount * (rate / 100) * months);
+    const mgmtFee  = Math.round(amount * 0.01);
+    const insurance = Math.round(amount * 0.01);
     const total = amount + interest;
     const installment = Math.round(total / months);
+    const netDisbursed = amount - mgmtFee - insurance;
 
     amountDisplay.textContent = fmt(amount);
     totalEl.textContent = fmt(total);
     sumList.innerHTML = '';
     sumList.appendChild(rowKv('Loan amount', fmt(amount)));
-    sumList.appendChild(rowKv('Interest rate', rate + '% / month'));
-    sumList.appendChild(rowKv('Term', term));
+    sumList.appendChild(rowKv('GTBank rate', rate + '% / month'));
+    sumList.appendChild(rowKv('Tenor', term));
     sumList.appendChild(rowKv('Total interest', fmt(interest)));
+    sumList.appendChild(rowKv('Mgmt fee (1%)', fmt(mgmtFee)));
+    sumList.appendChild(rowKv('Insurance (1%)', fmt(insurance)));
+    sumList.appendChild(rowKv('Net to wallet', fmt(netDisbursed)));
     sumList.appendChild(rowKv('Monthly instalment', fmt(installment), true));
 
-    aiNote.innerHTML = `<strong style="color:#E8FF8B;">AI:</strong> At ${fmt(installment)} / month, your repayment uses ${Math.round((installment / TRADER.monthlyRevenue) * 100)}% of average revenue — within the safe 18% threshold.`;
+    const ratio = Math.round((installment / TRADER.monthlyRevenue) * 100);
+    aiNote.innerHTML = `<strong style="color:#E8FF8B;">AI:</strong> At ${fmt(installment)} / month, your repayment uses ${ratio}% of average revenue — ${ratio < 25 ? 'within the safe 25% threshold' : 'above GTBank\'s safe 25% threshold — consider a longer tenor'}.`;
   }
 
   slider.addEventListener('input', e => { amount = parseInt(e.target.value, 10); paint(); });
