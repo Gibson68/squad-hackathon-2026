@@ -26,10 +26,10 @@ export function Landing({ navigate }) {
   navInner.appendChild(logo);
 
   const navLinks = el('nav', { class: 'hidden md:flex items-center gap-7 mx-auto' },
-    NavLink('How it works', 'how'),
-    NavLink('Features',     'features'),
-    NavLink('AI Insights',  'ai-insights'),
-    NavLink('For Squad',    'cta'),
+    NavLink('How it works', '#how'),
+    NavLink('Features', '#features'),
+    NavLink('AI Insights', '#features'),
+    NavLink('For Squad', '#cta'),
   );
   navInner.appendChild(navLinks);
 
@@ -82,10 +82,10 @@ export function Landing({ navigate }) {
   copy.appendChild(el('h1', {
     class: 'font-display text-[40px] sm:text-[52px] lg:text-[64px] font-extrabold text-squad-deep leading-[1.02]',
     style: { letterSpacing: '-0.035em' },
-  }, 'Credit for every', el('br'), 'Nigerian trader.'));
+  }, 'Credit for every', el('br'), 'informal worker.'));
   copy.appendChild(el('p', {
     class: 'mt-5 text-[16px] lg:text-[17px] text-ink-2 leading-relaxed max-w-[540px]',
-  }, "Your daily Squad transactions become a real credit profile. Get fair loans in minutes — no paperwork, no collateral, no 40% APR traps. We use AI to score, recommend, and protect your business as it grows."));
+  }, "Traders hire workers. Workers earn through Squad. Every payment becomes credit history. The TradeScore engine underwrites both sides — informal market traders and the job seekers they hire — so fair loans reach the people the banks have always missed."));
 
   const heroBtns = el('div', { class: 'mt-7 flex flex-wrap gap-3' });
   heroBtns.appendChild(el('button', {
@@ -113,10 +113,8 @@ export function Landing({ navigate }) {
   copy.appendChild(trust);
   heroInner.appendChild(copy);
 
-  // Right: AI demo card (also serves as the "AI Insights" anchor)
-  const aiDemo = buildAiDemoCard();
-  aiDemo.id = 'ai-insights';
-  heroInner.appendChild(aiDemo);
+  // Right: AI demo card
+  heroInner.appendChild(buildAiDemoCard());
   hero.appendChild(heroInner);
   root.appendChild(hero);
 
@@ -228,18 +226,10 @@ export function Landing({ navigate }) {
   return root;
 }
 
-function NavLink(label, targetId) {
+function NavLink(label, href = '#') {
   return el('a', {
-    class: 'text-[13.5px] font-medium text-ink-2 hover:text-squad-deep transition cursor-pointer',
-    href: 'javascript:void(0)',
-    onClick: (e) => {
-      e.preventDefault();
-      const target = document.getElementById(targetId);
-      if (target) {
-        const top = target.getBoundingClientRect().top + window.scrollY - 70;
-        window.scrollTo({ top, behavior: 'smooth' });
-      }
-    },
+    class: 'text-[13.5px] font-medium text-ink-2 hover:text-squad-deep transition',
+    href,
   }, label);
 }
 

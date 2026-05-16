@@ -1,34 +1,45 @@
 import { el, fmt, icon } from '../utils.js';
-import { getAllTransactions } from '../store.js';
+import { getAllTransactions, onTxsUpdated } from '../store.js';
 import { categorize } from '../ai.js';
 
-export function Transactions({ navigate }) {
+export function Transactions() {
   const root = el('div', { class: 'max-w-[1280px] mx-auto space-y-6' });
   let filter = 'all';
   let category = null;
-  const all = getAllTransactions();
+  // Pre-fill from ?q= set by the topbar search submit.
+  let query = (new URLSearchParams(location.search).get('q') || '').trim().toLowerCase();
 
-  // ── Header KPIs ──────────────────────────────────────────
-  const inflow  = all.filter(t => t.type === 'in').reduce((s, t) => s + t.amount, 0);
-  const outflow = all.filter(t => t.type === 'out').reduce((s, t) => s + t.amount, 0);
-
-  root.appendChild(el('div', { class: 'grid grid-cols-2 lg:grid-cols-4 gap-4 fade-up' },
-    KpiSm('Total inflow',  fmt(inflow),  all.filter(t => t.type === 'in').length + ' transactions',  '#27AE60', 'arrow-down-circle'),
-    KpiSm('Total outflow', fmt(outflow), all.filter(t => t.type === 'out').length + ' transactions', '#D4711F', 'arrow-up-circle'),
-    KpiSm('Net flow',      fmt(inflow - outflow), 'Last 30 days', '#0B6E4F', 'graph-up-arrow'),
-    KpiSm('Categories',    Object.keys(buildCategoryMap(all)).length, 'AI-detected types', '#6C5CE7', 'tags'),
-  ));
+  // ── Header KPIs (refilled on tx updates) ─────────────────
+  const kpiRow = el('div', { class: 'grid grid-cols-2 lg:grid-cols-4 gap-4 fade-up' });
+  root.appendChild(kpiRow);
+  function renderKpis() {
+    const all = getAllTransactions();
+    const inflow  = all.filter(t => t.type === 'in').reduce((s, t) => s + t.amount, 0);
+    const outflow = all.filter(t => t.type === 'out').reduce((s, t) => s + t.amount, 0);
+    kpiRow.innerHTML = '';
+    kpiRow.appendChild(KpiSm('Total inflow',  fmt(inflow),  all.filter(t => t.type === 'in').length + ' transactions',  '#27AE60', 'arrow-down-circle'));
+    kpiRow.appendChild(KpiSm('Total outflow', fmt(outflow), all.filter(t => t.type === 'out').length + ' transactions', '#D4711F', 'arrow-up-circle'));
+    kpiRow.appendChild(KpiSm('Net flow',      fmt(inflow - outflow), 'All time', '#0B6E4F', 'graph-up-arrow'));
+    kpiRow.appendChild(KpiSm('Categories',    Object.keys(buildCategoryMap(all)).length, 'AI-detected types', '#6C5CE7', 'tags'));
+  }
+  renderKpis();
 
   // ── Filters bar ──────────────────────────────────────────
   const bar = el('div', { class: 'card p-4 flex flex-wrap items-center gap-3 fade-up-1' });
+  const searchInput = el('input', {
+    class: 'flex-1 bg-transparent outline-none text-[13px]',
+    placeholder: 'Search transactions, refs, customers…',
+  });
+  if (query) searchInput.value = query;
+  searchInput.addEventListener('input', () => {
+    query = searchInput.value.trim().toLowerCase();
+    renderList();
+  });
   bar.appendChild(el('div', {
     class: 'flex items-center gap-2 px-3 py-2 rounded-xl bg-squad-paper border border-line flex-1 min-w-[200px]',
   },
     el('span', { class: 'text-ink-3', style: { fontSize: '14px' } }, icon('search')),
-    el('input', {
-      class: 'flex-1 bg-transparent outline-none text-[13px]',
-      placeholder: 'Search transactions, refs, customers…',
-    }),
+    searchInput,
   ));
 
   const segWrap = el('div', { class: 'flex bg-squad-paper p-1 rounded-xl border border-line', 'data-seg': '1' });
@@ -36,7 +47,7 @@ export function Transactions({ navigate }) {
     const btn = el('button', {
       class: 'px-4 py-2 rounded-lg text-[12.5px] font-bold capitalize tap',
       'data-filter': s,
-      onClick: () => { filter = s; render(); paintSeg(); },
+      onClick: () => { filter = s; renderList(); paintSeg(); },
     }, s === 'in' ? 'Inflow' : s === 'out' ? 'Outflow' : 'All');
     segWrap.appendChild(btn);
   });
@@ -53,65 +64,79 @@ export function Transactions({ navigate }) {
 
   bar.appendChild(el('button', {
     class: 'btn btn-ghost !py-2.5 !px-4 !text-[12.5px]',
+    onClick: () => exportFilteredCsv(visibleTxs()),
   }, icon('download'), 'Export CSV'));
   root.appendChild(bar);
 
-  // ── Category chips ──────────────────────────────────────
+  // ── Category chip bar ───────────────────────────────────
   const catBar = el('div', { class: 'flex flex-wrap gap-2 fade-up-2' });
-  const cats = buildCategoryMap(all);
-  const allBtn = el('button', {
-    class: 'chip px-4 py-2 cursor-pointer tap',
-    'data-cat': '__all',
-    style: { background: '#022B23', color: '#fff' },
-    onClick: () => { category = null; render(); paintCats(); },
-  }, icon('grid-fill'), 'All categories');
-  catBar.appendChild(allBtn);
-  Object.entries(cats).forEach(([name, info]) => {
-    const btn = el('button', {
-      class: 'chip px-4 py-2 cursor-pointer tap',
-      'data-cat': name,
-      style: { background: '#fff', color: info.color, border: '1px solid #E2E8E4' },
-      onClick: () => { category = (category === name ? null : name); render(); paintCats(); },
-    }, icon('tag-fill'), `${name} · ${info.count}`);
-    catBar.appendChild(btn);
-  });
-  function paintCats() {
-    catBar.querySelectorAll('[data-cat]').forEach(b => {
-      const key = b.dataset.cat;
-      const isAll = key === '__all';
-      const active = isAll ? !category : (category === key);
-      if (isAll) {
-        b.style.background = active ? '#022B23' : '#fff';
-        b.style.color      = active ? '#fff' : '#4A5C56';
-        b.style.border     = active ? '1px solid #022B23' : '1px solid #E2E8E4';
-      } else {
-        const info = cats[key];
-        b.style.background = active ? info.color : '#fff';
-        b.style.color      = active ? '#fff' : info.color;
-        b.style.border     = active ? '1px solid ' + info.color : '1px solid #E2E8E4';
-      }
-    });
-  }
   root.appendChild(catBar);
+  function renderCats() {
+    catBar.innerHTML = '';
+    const cats = buildCategoryMap(getAllTransactions());
+    const allBtn = el('button', {
+      class: 'chip px-4 py-2 cursor-pointer tap',
+      'data-cat': '__all',
+      style: { background: '#022B23', color: '#fff' },
+      onClick: () => { category = null; renderList(); renderCats(); },
+    }, icon('grid-fill'), 'All categories');
+    catBar.appendChild(allBtn);
+    Object.entries(cats).forEach(([name, info]) => {
+      const active = category === name;
+      const btn = el('button', {
+        class: 'chip px-4 py-2 cursor-pointer tap',
+        'data-cat': name,
+        style: active
+          ? { background: info.color, color: '#fff', border: '1px solid ' + info.color }
+          : { background: '#fff', color: info.color, border: '1px solid #E2E8E4' },
+        onClick: () => { category = (category === name ? null : name); renderList(); renderCats(); },
+      }, icon('tag-fill'), `${name} · ${info.count}`);
+      catBar.appendChild(btn);
+    });
+    // Paint the "all categories" chip state
+    if (category) {
+      allBtn.style.background = '#fff';
+      allBtn.style.color = '#4A5C56';
+      allBtn.style.border = '1px solid #E2E8E4';
+    }
+  }
+  renderCats();
 
-  // ── List ────────────────────────────────────────────────
+  // ── List ─────────────────────────────────────────────────
   const card = el('div', { class: 'card p-2 md:p-3 fade-up-3' });
   const list = el('div', { class: 'divide-y divide-line' });
   card.appendChild(list);
   root.appendChild(card);
 
-  function render() {
+  function visibleTxs() {
+    let v = getAllTransactions().filter(t => filter === 'all' || t.type === filter);
+    if (category) v = v.filter(t => categorize(t).category === category);
+    if (query) {
+      v = v.filter(t =>
+        (t.name || '').toLowerCase().includes(query) ||
+        (t.ref  || '').toLowerCase().includes(query),
+      );
+    }
+    return v;
+  }
+  function renderList() {
     list.innerHTML = '';
-    let visible = all.filter(t => filter === 'all' || t.type === filter);
-    if (category) visible = visible.filter(t => categorize(t).category === category);
-    if (!visible.length) {
+    const v = visibleTxs();
+    if (!v.length) {
       list.appendChild(el('div', { class: 'p-8 text-center text-ink-3 text-[13px]' },
         'No transactions match this filter.'));
       return;
     }
-    visible.forEach(t => list.appendChild(buildRow(t)));
+    v.forEach(t => list.appendChild(buildRow(t)));
   }
-  render();
+  renderList();
+
+  // Re-render everything when a fresh /api/transactions response lands.
+  onTxsUpdated(() => {
+    renderKpis();
+    renderCats();
+    renderList();
+  });
 
   return root;
 }
@@ -136,7 +161,7 @@ function buildRow(tx) {
           style: { background: cat.color + '18', color: cat.color, padding: '2px 8px', fontSize: '10.5px' },
         }, icon('tag-fill'), cat.category),
       ),
-      el('div', { class: 'text-[11.5px] text-ink-3 mt-0.5' }, tx.time + (tx.ref ? ' · ' + tx.ref : '')),
+      el('div', { class: 'text-[11.5px] text-ink-3 mt-0.5' }, (tx.time || '') + (tx.ref ? ' · ' + tx.ref : '')),
     ),
     el('div', {
       class: 'text-[14.5px] font-extrabold flex-shrink-0',
@@ -191,4 +216,24 @@ function buildCategoryMap(list) {
     map[c.category].count += 1;
   });
   return map;
+}
+
+// CSV export — writes whatever is currently visible (filter+category+query).
+function exportFilteredCsv(rows) {
+  const headers = ['name', 'type', 'amount', 'category', 'time', 'ref'];
+  const lines = [headers.join(',')];
+  rows.forEach(t => {
+    const cat = categorize(t).category;
+    const row = [t.name || '', t.type || '', t.amount || 0, cat, t.time || '', t.ref || '']
+      .map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+    lines.push(row);
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tradescore-transactions-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 100);
 }

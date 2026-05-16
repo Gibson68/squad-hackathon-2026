@@ -86,7 +86,10 @@ export function svgEl(tag, props, ...children) {
   return node;
 }
 
-// Lightweight toast — appears bottom-center, auto-dismisses.
+// Lightweight bottom-center toast — auto-dismisses. Used by inventory/profile
+// panels for short action confirmations ("Sale recorded", "Settings saved").
+// Distinct from the top-right SSE banner host in js/toast.js — different
+// surface, different lifecycle. Both can coexist on the page.
 export function toast(message, { iconName = 'check-circle-fill', color = '#27AE60', duration = 2200 } = {}) {
   let host = document.getElementById('ts-toast-host');
   if (!host) {
@@ -146,7 +149,8 @@ export function openModal(builder, { width = 480 } = {}) {
     'aria-label': 'Close',
   }, icon('x-lg'));
   modal.appendChild(closeBtn);
-  builder({ modal, close });
+  const built = builder({ modal, close });
+  if (built instanceof Node && built !== modal) modal.appendChild(built);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
   return { overlay, close };

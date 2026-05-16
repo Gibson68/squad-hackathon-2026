@@ -1,8 +1,9 @@
 import { el, icon } from '../utils.js';
-import { chatRespond, streamReply } from '../ai.js';
-import { getUser } from '../store.js';
+import { streamReply, chatRespond } from '../ai.js';
+import { getUser, getScore } from '../store.js';
+import { api } from '../api.js';
 
-const SUGGESTIONS = [
+const DEFAULT_SUGGESTIONS = [
   'How can I improve my TradeScore?',
   'How much can I safely borrow?',
   'When should I restock?',
@@ -12,7 +13,11 @@ const SUGGESTIONS = [
 
 export function Assistant() {
   const TRADER = getUser();
+  const liveScore = getScore();
   const root = el('div', { class: 'max-w-[960px] mx-auto h-[calc(100vh-120px)] flex flex-col' });
+
+  // Conversation history that we pass to the backend each turn (stateless server).
+  const history = [];
 
   // ── Header ────────────────────────────────────────────────
   const header = el('div', {
@@ -30,7 +35,7 @@ export function Assistant() {
           el('span', { style: { fontSize: '7px' } }, '●'), 'Online'),
       ),
       el('div', { class: 'text-[12px] text-ink-3 -mt-0.5' },
-        `Trained on ${TRADER.transactions} transactions · Knows ${TRADER.business.toLowerCase()} inside out`),
+        contextLine(TRADER, liveScore)),
     ),
   ));
   header.appendChild(el('button', {
@@ -39,26 +44,25 @@ export function Assistant() {
   }, icon('arrow-clockwise'), 'New chat'));
   root.appendChild(header);
 
-  // ── Chat scroll area ─────────────────────────────────────
+  // ── Chat scroll area ────────────────────────────────────
   const chat = el('div', { class: 'flex-1 overflow-y-auto pr-2' });
   root.appendChild(chat);
 
   // Initial greeting
   const greeting = chatBubble('ai', null);
   chat.appendChild(greeting);
-  typeOut(greeting.querySelector('[data-content]'),
-    `Hello ${TRADER.firstName}! I'm your TradeScore assistant. I've reviewed your last ${TRADER.transactions} transactions — your business is in great shape (₦${TRADER.monthlyRevenue.toLocaleString()} monthly, +${TRADER.growth}% growth). What would you like to know?`);
+  typeOut(greeting.querySelector('[data-content]'), buildGreeting(TRADER, liveScore));
 
-  // Quick suggestions
+  // Score-aware suggestions
   const suggestions = el('div', { class: 'flex flex-wrap gap-2 mt-3 mb-2' });
-  SUGGESTIONS.forEach(s => suggestions.appendChild(el('button', {
+  buildSuggestions(liveScore).forEach(s => suggestions.appendChild(el('button', {
     class: 'chip px-3.5 py-2 cursor-pointer tap text-[12px] hover:bg-squad-pale',
     style: { background: '#fff', color: '#4A5C56', border: '1px solid #E2E8E4' },
     onClick: () => { input.value = s; submit(); },
   }, s)));
   chat.appendChild(suggestions);
 
-  // ── Input bar ────────────────────────────────────────────
+  // ── Input bar ───────────────────────────────────────────
   const inputBar = el('form', {
     class: 'mt-4 p-2 rounded-2xl border border-line bg-white flex items-center gap-2',
     style: { boxShadow: '0 8px 22px rgba(2, 43, 35, 0.06)' },
@@ -76,7 +80,8 @@ export function Assistant() {
   root.appendChild(inputBar);
 
   let busy = false;
-  async function submit() {
+  async function submit(ev) {
+    if (ev) ev.preventDefault();
     if (busy) return;
     const text = input.value.trim();
     if (!text) return;
@@ -84,6 +89,7 @@ export function Assistant() {
 
     // user bubble
     chat.appendChild(chatBubble('user', text));
+    history.push({ role: 'user', content: text });
     input.value = '';
     chat.scrollTop = chat.scrollHeight;
 
@@ -100,21 +106,68 @@ export function Assistant() {
     chat.appendChild(typing);
     chat.scrollTop = chat.scrollHeight;
 
-    const reply = await chatRespond(text);
-    typing.remove();
+    // Real Claude on the backend — falls back to the local mock router on
+    // network/auth failure so the chat never hard-stops in a demo.
+    let reply;
+    try {
+      const resp = await api.chat({ message: text, history });
+      // Backend returns { text, usage, model }. Older callers used .reply /
+      // .message — kept as fallbacks in case the shape ever changes.
+      reply = resp.text || resp.reply || resp.message || '';
+      if (!reply) throw new Error('Empty reply');
+    } catch (e) {
+      console.warn('[assistant] api.chat failed, falling back to local:', e?.message);
+      reply = await chatRespond(text, history);
+    }
+    history.push({ role: 'assistant', content: reply });
 
+    typing.remove();
     const aiB = chatBubble('ai', null);
     chat.appendChild(aiB);
     await typeOut(aiB.querySelector('[data-content]'), reply);
     busy = false;
     chat.scrollTop = chat.scrollHeight;
   }
-  inputBar.addEventListener('submit', e => { e.preventDefault(); submit(); });
+  inputBar.addEventListener('submit', submit);
 
   return root;
 }
 
-// ── Chat bubble factory ─────────────────────────────────────────
+// ── Context line under the header ─────────────────────────────
+function contextLine(trader, liveScore) {
+  if (liveScore?.score != null) {
+    const txN = liveScore.aggregates?.transactions ?? 0;
+    return `Trained on ${txN} transaction${txN === 1 ? '' : 's'} · TradeScore ${liveScore.score}`;
+  }
+  return trader.business
+    ? `Knows ${trader.business.toLowerCase()} inside out`
+    : 'Ready to analyse your business';
+}
+
+function buildGreeting(trader, liveScore) {
+  const first = trader.firstName || 'Hi';
+  if (liveScore?.score != null) {
+    const txN = liveScore.aggregates?.transactions ?? 0;
+    const rev = liveScore.aggregates?.monthlyRevenue;
+    const revLine = rev ? `, ₦${rev.toLocaleString('en-NG')} monthly` : '';
+    return `Hello ${first}! I've reviewed your last ${txN} transaction${txN === 1 ? '' : 's'}${revLine}. Ask me anything about your score, loans, cashflow or risks.`;
+  }
+  return `Hello ${first}! I'm your TradeScore assistant. Once a few payments land in your virtual account I'll be able to ground my answers in your real data — but ask away anytime.`;
+}
+
+function buildSuggestions(liveScore) {
+  if (liveScore?.score != null && liveScore.score < 700) {
+    return [
+      'How can I improve my TradeScore?',
+      'What\'s holding my score back?',
+      'How much can I safely borrow today?',
+      'When should I restock?',
+    ];
+  }
+  return DEFAULT_SUGGESTIONS;
+}
+
+// ── Chat bubble factory ─────────────────────────────────────
 function chatBubble(role, text) {
   const wrap = el('div', { class: 'flex gap-3 mt-4 fade-up' });
   if (role === 'ai') wrap.appendChild(avatar('ai'));
@@ -128,6 +181,8 @@ function chatBubble(role, text) {
 
 function avatar(kind) {
   const isAi = kind === 'ai';
+  const TRADER = getUser();
+  const initial = TRADER.firstName?.[0]?.toUpperCase() || 'U';
   return el('div', {
     class: 'w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[13px] font-bold',
     style: {
@@ -135,7 +190,7 @@ function avatar(kind) {
         ? 'linear-gradient(135deg, #0B6E4F, #27AE60)'
         : 'linear-gradient(135deg, #1F8A65, #022B23)',
     },
-  }, isAi ? icon('stars') : 'F');
+  }, isAi ? icon('stars') : initial);
 }
 
 function dotPulse(delay) {

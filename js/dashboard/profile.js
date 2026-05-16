@@ -1,17 +1,32 @@
 import { el, fmt, icon, openModal, toast } from '../utils.js';
-import { getUser, saveUser, clearUser, getPrefs, savePrefs, CATALOG } from '../store.js';
+import {
+  getUser, saveUser, clearUser, getPrefs, savePrefs, getScore, onScoreUpdated, onTxsUpdated,
+  CATALOG,
+} from '../store.js';
 
 export function ProfilePanel({ navigate }) {
   const root = el('div', { class: 'max-w-[960px] mx-auto space-y-6' });
   render();
+  // Re-render whenever live score or txs change — keeps the header chips and
+  // stat strip in sync with whatever's happening on the Overview tab.
+  onScoreUpdated(() => render());
+  onTxsUpdated(() => render());
 
   function render() {
     const TRADER = getUser();
+    const liveScore = getScore();
+    const score = liveScore?.score;
+    const agg = liveScore?.aggregates || {};
     root.innerHTML = '';
 
     const SETTINGS = [
       { icon: 'shop',              label: 'Business details', sub: 'Edit shop name, category, location',  onClick: openBusinessModal },
-      { icon: 'link-45deg',        label: 'Squad wallet',     sub: 'Connected · ' + TRADER.squadWallet, tag: 'Linked', onClick: openWalletModal },
+      { icon: 'link-45deg',        label: 'Squad wallet',
+        sub: TRADER.squadWallet
+          ? `${TRADER.virtualAccountBank || 'GTBank'} · ${TRADER.squadWallet}`
+          : 'Provisioning — refresh in a moment',
+        tag: TRADER.squadWallet ? 'Linked' : 'Pending',
+        onClick: openWalletModal },
       { icon: 'box-seam',          label: 'Inventory',        sub: 'Manage items and prices',             onClick: () => navigate('#/app/inventory') },
       { icon: 'file-earmark-text', label: 'Loan history',     sub: 'View past loans & repayment schedule', onClick: openLoanHistoryModal },
       { icon: 'bell',              label: 'Notifications',    sub: 'Email, SMS and in-app alerts',         onClick: openNotificationsModal },
@@ -31,21 +46,36 @@ export function ProfilePanel({ navigate }) {
     header.appendChild(el('div', {
       class: 'w-[88px] h-[88px] rounded-2xl flex items-center justify-center text-white font-extrabold text-[26px]',
       style: { background: 'rgba(232,255,139,0.18)', border: '1px solid rgba(232,255,139,0.28)' },
-    }, TRADER.avatar));
+    }, TRADER.avatar || initialsOf(TRADER.name) || '?'));
 
     const info = el('div', {});
-    info.appendChild(el('h1', { class: 'font-display text-white font-extrabold text-[26px] lg:text-[30px]' }, TRADER.name));
+    info.appendChild(el('h1', { class: 'font-display text-white font-extrabold text-[26px] lg:text-[30px]' },
+      TRADER.name || 'Your profile'));
     info.appendChild(el('p', {
       class: 'text-[13.5px] mt-1 flex items-center gap-1.5 flex-wrap', style: { color: 'rgba(255,255,255,0.75)' },
-    }, TRADER.business + ' · ', icon('geo-alt'), TRADER.location));
-    info.appendChild(el('div', { class: 'flex flex-wrap gap-2 mt-3' },
-      el('span', { class: 'chip', style: { background: '#E8FF8B', color: '#022B23' } },
-        'TradeScore ' + TRADER.score),
-      el('span', { class: 'chip', style: { background: 'rgba(255,255,255,0.10)', color: '#fff', border: '1px solid rgba(232,255,139,0.30)' } },
-        icon('fire'), TRADER.streak + '-mo streak'),
-      el('span', { class: 'chip', style: { background: 'rgba(255,255,255,0.10)', color: '#fff', border: '1px solid rgba(232,255,139,0.30)' } },
-        'Member since ' + TRADER.since),
+    },
+      TRADER.business ? TRADER.business + ' · ' : '',
+      TRADER.location ? icon('geo-alt') : null,
+      TRADER.location || '',
     ));
+
+    const chips = el('div', { class: 'flex flex-wrap gap-2 mt-3' });
+    if (score != null) {
+      chips.appendChild(el('span', { class: 'chip', style: { background: '#E8FF8B', color: '#022B23' } },
+        'TradeScore ' + score));
+    } else {
+      chips.appendChild(el('span', {
+        class: 'chip',
+        style: { background: 'rgba(255,255,255,0.10)', color: 'rgba(232,255,139,0.85)', border: '1px solid rgba(232,255,139,0.30)' },
+      }, 'No score yet'));
+    }
+    if (TRADER.since) {
+      chips.appendChild(el('span', {
+        class: 'chip',
+        style: { background: 'rgba(255,255,255,0.10)', color: '#fff', border: '1px solid rgba(232,255,139,0.30)' },
+      }, 'Member since ' + TRADER.since));
+    }
+    info.appendChild(chips);
     header.appendChild(info);
 
     header.appendChild(el('button', {
@@ -55,18 +85,33 @@ export function ProfilePanel({ navigate }) {
     root.appendChild(header);
 
     // ── Stat strip ──────────────────────────────────────────
-    const strip = el('div', { class: 'grid grid-cols-2 lg:grid-cols-4 gap-4 fade-up-1' });
+    const dash = '—';
+    const stripWrap = el('div', { class: 'fade-up-1' });
+    const stripHeader = el('div', { class: 'flex items-center justify-between mb-2 px-1' },
+      el('div', { class: 'text-[10.5px] uppercase tracking-wider text-ink-3 font-bold' }, 'At a glance'),
+      el('div', { class: 'flex items-center gap-1.5 text-[11px] font-medium', style: { color: '#0B6E4F' } },
+        el('span', {
+          class: 'inline-block rounded-full',
+          style: {
+            width: '7px', height: '7px', background: '#27AE60',
+            animation: 'pulse 1.6s infinite',
+          },
+        }),
+        'Live',
+      ),
+    );
+    const strip = el('div', { class: 'grid grid-cols-2 lg:grid-cols-4 gap-4' });
     [
-      { label: 'TradeScore',      value: TRADER.score,                         accent: '#022B23' },
-      { label: 'Monthly revenue', value: fmt(TRADER.monthlyRevenue),           accent: '#27AE60' },
-      { label: 'Streak',          value: TRADER.streak + ' mo',                accent: '#0B6E4F' },
-      { label: 'Growth',          value: '+' + TRADER.growth + '%',            accent: '#1F8A65' },
+      { label: 'TradeScore',      value: score ?? dash,                                   accent: '#022B23' },
+      { label: 'Monthly revenue', value: agg.monthlyRevenue ? fmt(agg.monthlyRevenue) : dash, accent: '#27AE60' },
+      { label: 'Transactions',    value: agg.transactions ?? 0,                            accent: '#0B6E4F' },
+      { label: 'Unique payers',   value: agg.uniqueCustomers ?? 0,                         accent: '#1F8A65' },
     ].forEach(s => strip.appendChild(el('div', {
       class: 'card p-5',
       style: { borderTop: '3px solid ' + s.accent },
     },
       el('div', {
-        class: 'text-[12px] uppercase tracking-[0.12em] font-extrabold',
+        class: 'text-[10.5px] uppercase tracking-wider font-bold',
         style: { color: s.accent },
       }, s.label),
       el('div', {
@@ -74,7 +119,9 @@ export function ProfilePanel({ navigate }) {
         style: { fontSize: '24px', letterSpacing: '-0.5px' },
       }, String(s.value)),
     )));
-    root.appendChild(strip);
+    stripWrap.appendChild(stripHeader);
+    stripWrap.appendChild(strip);
+    root.appendChild(stripWrap);
 
     // ── Settings list ───────────────────────────────────────
     const list = el('div', { class: 'card overflow-hidden fade-up-2' });
@@ -107,7 +154,11 @@ export function ProfilePanel({ navigate }) {
       style: { background: '#FCE8E8', color: '#D43E3E' },
       onClick: () => {
         if (confirm('Log out of TradeScore? Your saved data stays on this device.')) {
+          // Wipe local session so a fresh signup doesn't see stale state.
           clearUser();
+          localStorage.removeItem('tradescore_txs');
+          localStorage.removeItem('tradescore_score');
+          localStorage.removeItem('tradescore_insights');
           toast('Logged out', { iconName: 'box-arrow-right', color: '#fff' });
           setTimeout(() => navigate('#/'), 400);
         }
@@ -115,7 +166,7 @@ export function ProfilePanel({ navigate }) {
     }, icon('box-arrow-right'), 'Log out'));
   }
 
-  // ── Modals ────────────────────────────────────────────────────
+  // ── Modals ──────────────────────────────────────────────────
   function openBusinessModal() {
     const u = getUser();
     openModal(({ modal, close }) => {
@@ -131,24 +182,26 @@ export function ProfilePanel({ navigate }) {
       ];
       const inputs = {};
       fields.forEach(f => {
-        form.appendChild(el('div', {},
-          el('div', { class: 'label' }, f.label),
-          f.select
-            ? selectInput(f.value, f.select, val => inputs[f.key] = val)
-            : (inputs[f.key] = f.value, el('input', {
-                class: 'input', value: f.value || '', type: f.type || 'text',
-                onInput: e => inputs[f.key] = e.target.value,
-              })),
-        ));
-        if (f.select) inputs[f.key] = f.value;
+        if (f.select) {
+          inputs[f.key] = f.value;
+          form.appendChild(el('div', {},
+            el('div', { class: 'label' }, f.label),
+            selectInput(f.value, f.select, val => inputs[f.key] = val),
+          ));
+        } else {
+          inputs[f.key] = f.value || '';
+          form.appendChild(el('div', {},
+            el('div', { class: 'label' }, f.label),
+            el('input', {
+              class: 'input', value: f.value || '', type: f.type || 'text',
+              onInput: e => inputs[f.key] = e.target.value,
+            }),
+          ));
+        }
       });
       form.appendChild(el('div', { class: 'flex gap-2 mt-4' },
-        el('button', {
-          class: 'btn btn-ghost flex-1', type: 'button', onClick: close,
-        }, 'Cancel'),
-        el('button', {
-          class: 'btn btn-primary flex-1', type: 'submit',
-        }, icon('check-lg'), 'Save changes'),
+        el('button', { class: 'btn btn-ghost flex-1', type: 'button', onClick: close }, 'Cancel'),
+        el('button', { class: 'btn btn-primary flex-1', type: 'submit' }, icon('check-lg'), 'Save changes'),
       ));
       form.addEventListener('submit', e => {
         e.preventDefault();
@@ -165,25 +218,25 @@ export function ProfilePanel({ navigate }) {
     const u = getUser();
     openModal(({ modal, close }) => {
       modal.appendChild(modalTitle('Squad wallet', 'Connected · sync status and controls.'));
-      const card = el('div', {
+      modal.appendChild(el('div', {
         class: 'rounded-2xl p-5 mb-4',
         style: { background: 'linear-gradient(135deg, #022B23 0%, #0B6E4F 100%)', color: '#fff' },
       },
-        el('div', { class: 'text-[10.5px] uppercase tracking-widest font-bold', style: { color: '#E8FF8B' } }, 'Wallet ID'),
-        el('div', { class: 'font-display text-[22px] font-extrabold mt-1' }, u.squadWallet),
+        el('div', { class: 'text-[10.5px] uppercase tracking-widest font-bold', style: { color: '#E8FF8B' } }, 'Virtual account'),
+        el('div', { class: 'font-display text-[22px] font-extrabold mt-1 select-all' },
+          u.squadWallet || 'Provisioning…'),
         el('div', { class: 'text-[12px] mt-1', style: { color: 'rgba(255,255,255,0.7)' } },
-          'Last synced 2 min ago · ' + u.transactions + ' transactions pulled'),
-      );
-      modal.appendChild(card);
+          (u.virtualAccountBank || 'GTBank') + (u.name ? ' · ' + u.name : '')),
+      ));
       modal.appendChild(el('div', { class: 'space-y-2' },
-        kvLine('Account name', u.name),
-        kvLine('Linked since', u.since),
-        kvLine('Status', 'Active', '#27AE60'),
+        kvLine('Account name', u.name || '—'),
+        kvLine('Linked since', u.since || '—'),
+        kvLine('Status', u.squadWallet ? 'Active' : 'Pending', u.squadWallet ? '#27AE60' : '#E89B2A'),
       ));
       modal.appendChild(el('div', { class: 'grid grid-cols-2 gap-2 mt-5' },
         el('button', {
           class: 'btn btn-ghost', onClick: () => {
-            toast('Wallet re-synced · 234 transactions', { iconName: 'arrow-clockwise' });
+            toast('Wallet re-syncing…', { iconName: 'arrow-clockwise' });
             close();
           },
         }, icon('arrow-clockwise'), 'Re-sync now'),
@@ -202,34 +255,21 @@ export function ProfilePanel({ navigate }) {
 
   function openLoanHistoryModal() {
     openModal(({ modal }) => {
-      modal.appendChild(modalTitle('Loan history', 'Past GTBank loans drawn via TradeScore.'));
-      const history = [
-        { product: 'GT Quick Credit',  amount: 150000, rate: 1.33, status: 'Repaid',  date: 'Jan 2026' },
-        { product: 'GT Smart Advance', amount: 350000, rate: 1.5,  status: 'Repaid',  date: 'Oct 2025' },
-        { product: 'GT Quick Credit',  amount:  80000, rate: 1.33, status: 'Repaid',  date: 'Jul 2025' },
-      ];
-      const list = el('div', { class: 'space-y-2.5' });
-      history.forEach(h => list.appendChild(el('div', {
-        class: 'p-4 rounded-xl border border-line flex items-center gap-3',
+      modal.appendChild(modalTitle('Loan history', 'Past loans drawn via TradeScore.'));
+      // Placeholder — wire to api.loans.list() in a follow-up. For now show a
+      // friendly empty state so the modal still feels useful.
+      modal.appendChild(el('div', {
+        class: 'p-6 rounded-xl text-center text-[13px]',
+        style: { background: '#F5F9F6', border: '1px dashed #E2E8E4', color: '#4A5C56' },
       },
-        el('div', {
-          class: 'w-10 h-10 rounded-xl flex items-center justify-center',
-          style: { background: '#022B23', color: '#E8FF8B', fontSize: '15px' },
-        }, icon('bank2')),
-        el('div', { class: 'flex-1 min-w-0' },
-          el('div', { class: 'text-[13.5px] font-bold text-ink-1' }, h.product),
-          el('div', { class: 'text-[11.5px] text-ink-3' }, h.date + ' · ' + h.rate + '% / mo'),
-        ),
-        el('div', { class: 'text-right' },
-          el('div', { class: 'font-display font-extrabold text-squad-deep' }, fmt(h.amount)),
-          el('span', { class: 'chip', style: { background: '#E5F9F0', color: '#27AE60', fontSize: '10.5px' } }, h.status),
-        ),
-      )));
-      modal.appendChild(list);
+        el('div', { class: 'flex justify-center mb-2', style: { color: '#0B6E4F', fontSize: '24px' } }, icon('inbox')),
+        el('div', { class: 'font-bold text-ink-1 mb-1' }, 'No loans drawn yet'),
+        el('div', {}, 'Once you take your first loan from the Loans tab, the repayment schedule will appear here.'),
+      ));
       modal.appendChild(el('div', { class: 'mt-5 p-3 rounded-xl text-[12.5px] flex items-center gap-2',
         style: { background: '#E8F4EE', color: '#0B6E4F' } },
-        icon('check-circle-fill'),
-        el('span', {}, '100% repayment rate · keeps your TradeScore above 740'),
+        icon('info-circle-fill'),
+        el('span', {}, 'Repayments auto-debit from your Squad wallet on schedule.'),
       ));
     });
   }
@@ -262,7 +302,6 @@ export function ProfilePanel({ navigate }) {
     const prefs = getPrefs();
     openModal(({ modal, close }) => {
       modal.appendChild(modalTitle('Security & PIN', 'Protect your TradeScore account.'));
-
       const state = { pin: prefs.security.pin || '', twoFA: prefs.security.twoFA };
 
       modal.appendChild(el('div', { class: 'label' }, '4-digit login PIN'));
@@ -359,6 +398,12 @@ export function ProfilePanel({ navigate }) {
 }
 
 // ── Small reusable bits ────────────────────────────────────────
+function initialsOf(name) {
+  if (!name) return '?';
+  return name.split(/\s+/).filter(Boolean).slice(0, 2)
+    .map(p => p[0]?.toUpperCase() || '').join('') || '?';
+}
+
 function modalTitle(title, sub) {
   const wrap = el('div', { class: 'mb-4 pr-10' });
   wrap.appendChild(el('h3', {

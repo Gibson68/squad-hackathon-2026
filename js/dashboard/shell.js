@@ -1,25 +1,43 @@
-import { el, icon } from '../utils.js';
-import { getUser } from '../store.js';
+import { el, fmt, icon } from '../utils.js';
+import { getUser, getTxs, getWalletBalance, onTxsUpdated } from '../store.js';
 import { Overview }       from './overview.js';
 import { ScorePanel }     from './score.js';
 import { LoansPanel }     from './loans.js';
 import { Transactions }   from './transactions.js';
 import { InventoryPanel } from './inventory.js';
 import { Assistant }      from './assistant.js';
+import { NetworkPanel }   from './network.js';
 import { ProfilePanel }   from './profile.js';
 
 const PANELS = {
   overview:     { title: 'Overview',       icon: 'house-door',       render: Overview       },
   score:        { title: 'TradeScore',     icon: 'speedometer2',     render: ScorePanel     },
   loans:        { title: 'Loans',          icon: 'cash-coin',        render: LoansPanel     },
-  inventory:    { title: 'Inventory',      icon: 'box-seam',         render: InventoryPanel },
+  inventory:    { title: 'Inventory',      icon: 'box-seam',         render: InventoryPanel, roles: ['trader'] },
   transactions: { title: 'Transactions',   icon: 'arrow-left-right', render: Transactions   },
   assistant:    { title: 'AI Assistant',   icon: 'stars',            render: Assistant      },
+  network:      { title: 'Network',        icon: 'diagram-3',        render: NetworkPanel   },
   profile:      { title: 'Profile',        icon: 'person-circle',    render: ProfilePanel   },
+};
+
+// Workers see a slimmer nav — no Inventory (they don't run a shop), and the
+// Transactions tab is reframed as "Earnings" in the label below.
+function visiblePanels(role) {
+  return Object.fromEntries(
+    Object.entries(PANELS).filter(([, p]) => !p.roles || p.roles.includes(role))
+  );
+}
+const WORKER_LABELS = {
+  overview:     'Earnings',
+  transactions: 'Gig history',
 };
 
 export function Shell({ panel, navigate }) {
   const user = getUser();
+  const role = user.role || 'trader';
+  const panels = visiblePanels(role);
+  const labelFor = (key, fallback) =>
+    (role === 'worker' && WORKER_LABELS[key]) || fallback;
   const root = el('div', { class: 'min-h-screen bg-squad-paper relative' });
 
   // Backdrop for mobile sidebar
@@ -52,7 +70,7 @@ export function Shell({ panel, navigate }) {
 
   // Nav items
   const nav = el('nav', { class: 'flex-1 p-4 space-y-1 overflow-y-auto' });
-  Object.entries(PANELS).forEach(([key, p]) => {
+  Object.entries(panels).forEach(([key, p]) => {
     const item = el('div', {
       class: 'nav-item' + (key === panel ? ' active' : ''),
       onClick: () => {
@@ -61,7 +79,7 @@ export function Shell({ panel, navigate }) {
       },
     },
       el('span', { class: 'nav-icon' }, icon(p.icon)),
-      el('span', {}, p.title),
+      el('span', {}, labelFor(key, p.title)),
     );
     if (key === 'assistant') {
       item.appendChild(el('span', {
@@ -109,10 +127,10 @@ export function Shell({ panel, navigate }) {
       el('div', {
         class: 'w-10 h-10 rounded-xl flex items-center justify-center text-white font-extrabold text-[13px]',
         style: { background: 'linear-gradient(135deg, #0B6E4F, #1F8A65)' },
-      }, user.avatar),
+      }, user.avatar || '?'),
       el('div', { class: 'flex-1 min-w-0' },
-        el('div', { class: 'text-[13px] font-bold text-ink-1 truncate' }, user.name),
-        el('div', { class: 'text-[11px] text-ink-3 truncate' }, user.business),
+        el('div', { class: 'text-[13px] font-bold text-ink-1 truncate' }, user.name || 'Profile'),
+        el('div', { class: 'text-[11px] text-ink-3 truncate' }, user.business || 'Tap to view'),
       ),
       el('span', { class: 'text-ink-3', style: { fontSize: '14px' } }, icon('three-dots')),
     ),
@@ -143,34 +161,93 @@ export function Shell({ panel, navigate }) {
     el('h1', {
       class: 'font-display text-[20px] lg:text-[22px] font-extrabold text-squad-deep',
       style: { letterSpacing: '-0.02em' },
-    }, PANELS[panel]?.title || 'Overview'),
+    }, labelFor(panel, panels[panel]?.title || 'Overview')),
   ));
 
-  // Search (desktop)
-  topbar.appendChild(el('div', {
+  // Search (desktop) — submits to /app/transactions?q=…
+  const searchInput = el('input', {
+    class: 'input flex-1 !p-0 !border-none !bg-transparent text-[13.5px] !shadow-none',
+    placeholder: 'Search transactions, refs, customers…',
+  });
+  const searchForm = el('form', {
     class: 'hidden md:flex items-center gap-2 ml-6 flex-1 max-w-[420px] h-10 px-3.5 rounded-xl bg-white border border-line',
   },
     el('span', { class: 'text-ink-3', style: { fontSize: '14px' } }, icon('search')),
-    el('input', {
-      class: 'input flex-1 !p-0 !border-none !bg-transparent text-[13.5px] !shadow-none',
-      placeholder: 'Search transactions, loans, customers…',
-    }),
+    searchInput,
     el('span', { class: 'text-[10px] font-semibold text-ink-3 px-1.5 py-0.5 rounded border border-line' }, '⌘K'),
-  ));
+  );
+  searchForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = searchInput.value.trim();
+    navigate(q ? `/app/transactions?q=${encodeURIComponent(q)}` : '/app/transactions');
+  });
+  topbar.appendChild(searchForm);
+
+  // ⌘K / Ctrl+K focuses the search input
+  const keyHandler = (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      searchInput.focus();
+    }
+  };
+  window.addEventListener('keydown', keyHandler);
+  topbar.addEventListener('removed', () => window.removeEventListener('keydown', keyHandler));
+
+  // Wallet pill — live balance from getWalletBalance()
+  const walletPill = el('button', {
+    class: 'hidden md:flex items-center gap-2.5 px-3.5 h-10 rounded-xl bg-white border border-line hover:bg-squad-paper text-ink-1 transition',
+    onClick: () => navigate('/app/overview'),
+    title: 'Open wallet',
+  });
+  const repaintWallet = () => {
+    const { available } = getWalletBalance();
+    walletPill.innerHTML = '';
+    walletPill.appendChild(el('span', {
+      style: { color: '#0B6E4F', fontSize: '14px' },
+    }, icon('wallet2')));
+    walletPill.appendChild(el('div', { class: 'leading-tight text-left' },
+      el('div', {
+        class: 'text-[9px] font-bold uppercase tracking-[0.12em] text-ink-3',
+      }, 'Wallet'),
+      el('div', {
+        class: 'text-[12.5px] font-extrabold text-squad-deep',
+        style: { letterSpacing: '-0.01em' },
+      }, fmt(available)),
+    ));
+  };
+  repaintWallet();
+  onTxsUpdated(() => repaintWallet());
+
+  // Bell: badge = inflows in last 24h
+  const bellBtn = iconBtn('bell', 0);
+  bellBtn.addEventListener('click', () => navigate('/app/transactions'));
+  const repaintBell = () => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const count = getTxs().filter(t =>
+      t.type === 'in' && t.occurred_at && new Date(t.occurred_at).getTime() >= cutoff
+    ).length;
+    setIconBtnBadge(bellBtn, count);
+  };
+  repaintBell();
+  onTxsUpdated(() => repaintBell());
+
+  const gearBtn = iconBtn('gear');
+  gearBtn.addEventListener('click', () => navigate('/app/profile'));
 
   topbar.appendChild(el('div', { class: 'flex items-center gap-2 ml-auto' },
-    iconBtn('bell', 3),
-    iconBtn('gear'),
+    walletPill,
+    bellBtn,
+    gearBtn,
     el('button', {
       class: 'btn btn-primary !py-2.5 !px-4 !text-[13px]',
-      onClick: () => navigate('#/app/loans'),
-    }, icon('plus-lg'), 'New loan'),
+      onClick: () => navigate('/app/loans'),
+    }, icon('plus-lg'), role === 'worker' ? 'See loans' : 'New loan'),
   ));
   main.appendChild(topbar);
 
   // ── Panel content ─────────────────────────────────────────
   const content = el('main', { class: 'flex-1 px-4 lg:px-8 py-6 lg:py-8' });
-  const factory = PANELS[panel]?.render || Overview;
+  const factory = panels[panel]?.render || Overview;
   content.appendChild(factory({ navigate }));
   main.appendChild(content);
 
@@ -187,9 +264,17 @@ function iconBtn(name, badge) {
     class: 'relative w-10 h-10 rounded-xl bg-white border border-line hover:bg-squad-paper flex items-center justify-center text-ink-1',
     style: { fontSize: '15px' },
   }, icon(name));
-  if (badge) btn.appendChild(el('span', {
+  setIconBtnBadge(btn, badge);
+  return btn;
+}
+
+function setIconBtnBadge(btn, badge) {
+  const existing = btn.querySelector('[data-badge]');
+  if (existing) existing.remove();
+  if (!badge) return;
+  btn.appendChild(el('span', {
     class: 'absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full text-white text-[10px] font-extrabold flex items-center justify-center',
     style: { background: '#D43E3E' },
+    'data-badge': '1',
   }, String(badge)));
-  return btn;
 }

@@ -2,6 +2,7 @@ import { el, fmt, icon, iconTile, toast, openModal } from '../utils.js';
 import {
   getUser, getInventory, addInventoryItem, updateInventoryItem, removeInventoryItem,
   recordSale, getSalesToday,
+  onInventoryUpdated,
   CATALOG, DEFAULT_PRICE,
 } from '../store.js';
 import { createPaymentLink, generateReference } from '../payments.js';
@@ -34,7 +35,7 @@ export function InventoryPanel() {
       icon('cloud-check'), 'Auto-saved'),
   ));
 
-  // ── Add panel ───────────────────────────────────────────────
+  // ── Add panel ──────────────────────────────────────────────
   const addCard = el('div', { class: 'card p-5 lg:p-6 grid lg:grid-cols-[1.2fr_1fr] gap-6' });
 
   // Left: category + item picker
@@ -49,6 +50,8 @@ export function InventoryPanel() {
         activeCat = c;
         pickedItem = null;
         price = DEFAULT_PRICE[c] || 1000;
+        priceInput.value = String(price);
+        paintPriceDisplay();
         renderItems(); paintCats(); renderPicked();
       },
     }, c);
@@ -69,7 +72,6 @@ export function InventoryPanel() {
   const itemGrid = el('div', { class: 'grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3' });
   left.appendChild(itemGrid);
 
-  // Custom typing field
   left.appendChild(el('div', { class: 'label mt-2' }, 'Or type a custom item'));
   const customInput = el('input', {
     class: 'input',
@@ -157,7 +159,6 @@ export function InventoryPanel() {
   priceWrap.appendChild(pricePlus);
   right.appendChild(priceWrap);
 
-  // Smart step buttons
   const stepRow = el('div', { class: 'flex flex-wrap gap-2 mt-2.5' });
   let activeStep = 100;
   function stepFor() { return activeStep; }
@@ -180,10 +181,7 @@ export function InventoryPanel() {
   paintSteps();
   right.appendChild(stepRow);
 
-  // Live preview
-  const preview = el('div', {
-    class: 'mt-4 text-[12px] text-ink-3',
-  });
+  const preview = el('div', { class: 'mt-4 text-[12px] text-ink-3' });
   function paintPriceDisplay() { preview.textContent = 'Preview: ' + fmt(price) + ' per unit'; }
   paintPriceDisplay();
   right.appendChild(preview);
@@ -206,7 +204,7 @@ export function InventoryPanel() {
   qtyWrap.appendChild(qtyPlus);
   right.appendChild(qtyWrap);
 
-  // Add button
+  // Add button — optimistic local update + backend POST handled inside store.
   const addBtn = el('button', {
     class: 'btn btn-primary w-full mt-5 !py-3.5',
     onClick: () => {
@@ -223,7 +221,7 @@ export function InventoryPanel() {
       pickedItem = null;
       customInput.value = '';
       qty = 1; qtyInput.value = '1';
-      paintItems(); renderPicked(); renderList();
+      paintItems(); renderPicked();
       flash(addBtn, '#E5F9F0');
     },
   }, icon('plus-circle-fill'), 'Add to inventory');
@@ -262,7 +260,10 @@ export function InventoryPanel() {
     if (!items.length) {
       list.appendChild(el('div', { class: 'p-8 text-center text-ink-3 text-[13px]' },
         'No items yet — pick a category above and add your first one.'));
-      totalChip.textContent = '0 items';
+      totalChip.innerHTML = '';
+      totalChip.appendChild(el('span', {}, '0 items'));
+      salesChip.innerHTML = '';
+      salesChip.appendChild(el('span', {}, 'No sales today'));
       return;
     }
     items.forEach(it => list.appendChild(buildRow(it, renderList)));
@@ -271,7 +272,6 @@ export function InventoryPanel() {
     totalChip.appendChild(el('span', {}, items.length + ' items · '));
     totalChip.appendChild(el('span', {}, fmt(totalValue) + ' total stock value'));
 
-    // Today's sales summary
     const todays = getSalesToday();
     const earned = todays.reduce((s, t) => s + t.total, 0);
     salesChip.innerHTML = '';
@@ -280,13 +280,15 @@ export function InventoryPanel() {
   }
   renderList();
 
+  // Re-render when backend pushes a fresh inventory snapshot.
+  onInventoryUpdated(() => renderList());
+
   return root;
 }
 
 function buildRow(it, refresh) {
   const row = el('div', { class: 'flex flex-wrap items-center gap-3 p-3 mx-2 rounded-xl hover:bg-squad-paper' });
 
-  // Icon + name
   row.appendChild(el('div', { class: 'flex items-center gap-3 flex-1 min-w-[180px]' },
     iconTile('box-seam', { size: 40, fontSize: 16, bg: '#E8F4EE', color: '#0B6E4F', radius: 11 }),
     el('div', { class: 'min-w-0' },
@@ -328,7 +330,7 @@ function buildRow(it, refresh) {
     title: 'Increase price by ₦100',
   }, icon('plus-lg')));
 
-  // Bigger step row (₦1k / ₦5k)
+  // Bigger step row (₦1k)
   const bigStepRow = el('div', { class: 'flex items-center gap-1' });
   [-1000, 1000].forEach(s => {
     bigStepRow.appendChild(el('button', {
@@ -367,7 +369,7 @@ function buildRow(it, refresh) {
     }, icon('plus-lg')),
   ));
 
-  // Cash sale button — opens modal asking for units + generates payment link
+  // Cash sale button
   const soldOut = it.qty <= 0;
   const saleBtn = el('button', {
     class: 'flex items-center gap-1.5 px-3 h-9 rounded-xl text-[12px] font-extrabold tap transition-all',
@@ -413,16 +415,13 @@ function flash(node, color) {
   setTimeout(() => { node.style.background = original; }, 320);
 }
 
-// ── Cash-sale modal ────────────────────────────────────────────────
-// Asks for qty, computes total, calls payments.createPaymentLink (stub),
-// then shows a copy-/share-able checkout URL. Backend swap-point lives
-// in js/payments.js — UI here is agnostic of the provider.
+// ── Cash-sale modal ─────────────────────────────────────────────
 function openCashSaleModal(item, refresh) {
   openModal(({ modal, close }) => {
     const user = getUser();
     let qty = 1;
     let generating = false;
-    let result = null;   // payment-link response once created
+    let result = null;
 
     modal.appendChild(el('div', { class: 'mb-4 pr-10' },
       el('h3', {
@@ -433,7 +432,6 @@ function openCashSaleModal(item, refresh) {
         'Confirm units and generate a payment link to share with the customer.'),
     ));
 
-    // Item summary
     modal.appendChild(el('div', {
       class: 'p-4 rounded-2xl mb-4 flex items-center gap-3',
       style: { background: '#FAFAF6', border: '1px solid #E2E8E4' },
@@ -446,7 +444,6 @@ function openCashSaleModal(item, refresh) {
       ),
     ));
 
-    // Qty stepper
     modal.appendChild(el('div', { class: 'label' }, 'Units sold'));
     const qtyWrap = el('div', { class: 'flex items-center gap-2' });
     const qtyMinus = el('button', {
@@ -478,7 +475,6 @@ function openCashSaleModal(item, refresh) {
     qtyWrap.appendChild(qtyPlus);
     modal.appendChild(qtyWrap);
 
-    // Total
     const totalCard = el('div', {
       class: 'mt-4 p-5 rounded-2xl flex items-center justify-between',
       style: { background: 'linear-gradient(135deg, #022B23 0%, #0B6E4F 100%)' },
@@ -496,11 +492,9 @@ function openCashSaleModal(item, refresh) {
     totalCard.appendChild(totalValue);
     modal.appendChild(totalCard);
 
-    // Result area (filled after generation)
     const resultBox = el('div', { class: 'mt-4' });
     modal.appendChild(resultBox);
 
-    // Action row
     const actions = el('div', { class: 'flex gap-2 mt-5' });
     const cancelBtn = el('button', {
       class: 'btn btn-ghost flex-1',
@@ -545,7 +539,7 @@ function openCashSaleModal(item, refresh) {
     paint();
 
     async function doGenerate() {
-      // Second click after generation → record the sale and close
+      // Second click after generation — record the sale and close
       if (result) {
         const r = recordSale(item, qty);
         if (r.ok) {
@@ -588,7 +582,6 @@ function openCashSaleModal(item, refresh) {
         el('span', { class: 'text-[11px] uppercase tracking-widest font-extrabold text-squad-deep' },
           'Payment link ready'),
       ));
-      // URL row
       const urlField = el('div', {
         class: 'flex items-center gap-1 p-2 rounded-xl bg-white border border-line',
       },
@@ -611,7 +604,6 @@ function openCashSaleModal(item, refresh) {
       );
       card.appendChild(urlField);
 
-      // Share row
       const shareRow = el('div', { class: 'flex flex-wrap gap-2 mt-3' });
       const waMsg = encodeURIComponent(
         `Hi! Please pay ${fmt(amount)} for ${qty} × ${item.name}.\nLink: ${res.url}\nRef: ${res.reference}`,
@@ -633,14 +625,12 @@ function openCashSaleModal(item, refresh) {
       }, icon('share-fill'), 'Share'));
       card.appendChild(shareRow);
 
-      // Reference + meta
       card.appendChild(el('div', { class: 'mt-3 grid grid-cols-2 gap-2 text-[11.5px] text-squad-deep/80' },
         el('div', {}, el('span', { class: 'font-bold' }, 'Ref: '), res.reference),
         el('div', { class: 'text-right' }, el('span', { class: 'font-bold' }, 'Provider: '), res.provider),
       ));
 
       resultBox.appendChild(card);
-      // Replace cancel with a "New link" reset
       cancelBtn.textContent = '';
       cancelBtn.appendChild(icon('arrow-clockwise'));
       cancelBtn.appendChild(el('span', { class: 'ml-1' }, 'New link'));

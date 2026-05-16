@@ -1,23 +1,28 @@
-// Mock trader profile — represents a real user's data pulled from the Squad API.
+// Shape-only trader profile. Real values come from /api/me, /api/score and
+// /api/transactions — every numeric field starts null so the UI shows "—"
+// or empty state instead of fake numbers for brand-new accounts. The
+// landing-page hero still uses these as a stand-in (it's marketing, not
+// user data) but inside the dashboard nothing should display a TRADER
+// default once a real user is signed in.
 export const TRADER = {
-  name: 'Funmi Adeyemi',
-  firstName: 'Funmi',
-  business: "Funmi's Fashion Fabrics",
-  location: 'Balogun Market, Lagos',
-  since: 'March 2023',
-  avatar: 'FA',
-  email: 'funmi@fashionfabrics.ng',
-  phone: '+234 803 ••• 4521',
+  name: '',
+  firstName: '',
+  business: '',
+  location: '',
+  since: '',
+  avatar: '',
+  email: '',
+  phone: '',
 
-  score: 742,
+  score: null,
   maxScore: 850,
-  monthlyRevenue: 847500,
-  transactions: 234,
-  growth: 18.4,
-  streak: 12,
-  loanEligible: 2000000,
-  uniqueCustomers: 184,
-  squadWallet: 'SQ-3417-820',
+  monthlyRevenue: null,
+  transactions: null,
+  growth: null,
+  streak: null,
+  loanEligible: null,
+  uniqueCustomers: null,
+  squadWallet: null,
 };
 
 // 30 days of transactions — richer dataset than before so the
@@ -52,6 +57,100 @@ export const FACTORS = [
 
 export const REV  = [420000, 510000, 490000, 630000, 580000, 710000, 847500];
 export const MONS = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'];
+
+// Job-seeker pool — the workforce side of the ecosystem. These are unemployed
+// youth / informal hands who have onboarded to Squad and built a payment
+// history through gigs. Each gig paid via Squad lands in their virtual
+// account, feeds the same TradeScore engine, and slowly unlocks credit for
+// them — that's the systemic loop Challenge 02 asks for.
+export const WORKERS = [
+  {
+    id: 'w1', name: 'Tunde Adebayo',     area: 'Yaba',     distanceKm: 1.8,
+    skills: ['delivery', 'load-bearer', 'errand', 'market-run'],
+    languages: ['English', 'Yoruba'], rating: 4.9, gigsCompleted: 87,
+    tradeScore: 678, hasSquadWallet: true, hourlyRate: 1500,
+    bio: 'Owns a bike · same-day market runs',
+  },
+  {
+    id: 'w2', name: 'Chiamaka Okeke',    area: 'Surulere', distanceKm: 3.2,
+    skills: ['shop-help', 'cashier', 'inventory-count', 'customer-service'],
+    languages: ['English', 'Igbo'], rating: 4.8, gigsCompleted: 64,
+    tradeScore: 642, hasSquadWallet: true, hourlyRate: 1200,
+    bio: 'Two years retail experience',
+  },
+  {
+    id: 'w3', name: 'Ibrahim Musa',      area: 'Mushin',   distanceKm: 2.4,
+    skills: ['delivery', 'load-bearer', 'stock-running', 'market-run'],
+    languages: ['English', 'Hausa', 'Yoruba'], rating: 4.7, gigsCompleted: 112,
+    tradeScore: 701, hasSquadWallet: true, hourlyRate: 1400,
+    bio: 'Strong lifter · Balogun & Idumota daily',
+  },
+  {
+    id: 'w4', name: 'Blessing Eze',      area: 'Yaba',     distanceKm: 0.9,
+    skills: ['shop-help', 'cashier', 'social-media', 'customer-service'],
+    languages: ['English', 'Igbo', 'Pidgin'], rating: 4.6, gigsCompleted: 31,
+    tradeScore: 598, hasSquadWallet: true, hourlyRate: 1100,
+    bio: 'New to gigs, eager · ND Marketing',
+  },
+  {
+    id: 'w5', name: 'Femi Lawal',        area: 'Lagos Island', distanceKm: 5.6,
+    skills: ['delivery', 'errand', 'driver'],
+    languages: ['English', 'Yoruba'], rating: 4.5, gigsCompleted: 48,
+    tradeScore: 615, hasSquadWallet: true, hourlyRate: 1600,
+    bio: 'Has a car · long-distance runs',
+  },
+  {
+    id: 'w6', name: 'Amaka Nwosu',       area: 'Surulere', distanceKm: 3.8,
+    skills: ['inventory-count', 'cashier', 'bookkeeping'],
+    languages: ['English', 'Igbo'], rating: 4.9, gigsCompleted: 22,
+    tradeScore: 581, hasSquadWallet: true, hourlyRate: 1300,
+    bio: 'Studies accounting · meticulous',
+  },
+];
+
+// Microcredit products for workers / job seekers. Smaller principals, shorter
+// terms, framed around real informal-economy use cases (transport advance,
+// skills training, asset purchase). Same underwriting engine — same TradeScore
+// gates each tier — but the products are appropriate to the user's earning
+// scale. This is the financial-inclusion side of the loop.
+export const WORKER_LOAN_TIERS = [
+  {
+    name: 'GT Starter Boost',
+    bank: 'GTBank',
+    minScore: 550,
+    max: 20_000,
+    rateMonthly: 2.5,
+    aprNote: '30% p.a.',
+    term: '30 days',
+    desc: 'Transport advance, airtime, urgent supplies',
+    fees: '₦500 flat origination',
+    icon: 'lightning-charge-fill',
+  },
+  {
+    name: 'GT Skills Loan',
+    bank: 'GTBank',
+    minScore: 620,
+    max: 80_000,
+    rateMonthly: 2.0,
+    aprNote: '24% p.a.',
+    term: '60 days',
+    desc: 'Certifications, training, vocational courses',
+    fees: '1% mgmt fee',
+    icon: 'mortarboard-fill',
+  },
+  {
+    name: 'GT Asset Loan',
+    bank: 'GTBank',
+    minScore: 700,
+    max: 300_000,
+    rateMonthly: 1.8,
+    aprNote: '21.6% p.a.',
+    term: '90 days',
+    desc: 'Bike, equipment, tools for self-employment',
+    fees: '1% mgmt fee · 1% insurance',
+    icon: 'tools',
+  },
+];
 
 // Real GTBank loan products (sourced from gtbank.com SME & retail offerings).
 // Rates are GTBank's published monthly equivalents; tenors are real GTBank terms.

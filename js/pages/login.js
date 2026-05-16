@@ -1,4 +1,6 @@
 import { el, icon } from '../utils.js';
+import { api, setCid, getCid } from '../api.js';
+import { saveUser, refreshTxsFromServer, refreshScoreFromServer, clearUserScopedStorage } from '../store.js';
 
 export function Login({ navigate }) {
   const root = el('div', { class: 'min-h-screen flex' });
@@ -31,7 +33,7 @@ export function Login({ navigate }) {
       el('h2', { class: 'font-display text-[36px] font-extrabold leading-tight' },
         'Welcome back.', el('br'), 'Your AI is up to speed.'),
       el('p', { class: 'mt-4 text-white/70 text-[14.5px] leading-relaxed max-w-[420px]' },
-        'While you were away, we tracked your inflows, recalculated your TradeScore, and prepped 2 new loan offers for you.'),
+        'Sign in and we’ll resume tracking your inflows, recompute your TradeScore, and surface any new loan offers.'),
     ),
     el('div', { class: 'text-[11.5px] text-white/45' },
       'Powered by Squad API · GTCO regulated · NDPR compliant'),
@@ -65,11 +67,11 @@ export function Login({ navigate }) {
   card.appendChild(el('p', { class: 'text-[14px] text-ink-2 mt-1.5 mb-8' },
     'Pick up where you left off.'));
 
-  const form = el('div', { class: 'space-y-4' });
+  const form = el('form', { class: 'space-y-4' });
 
   const emailWrap = el('div');
-  emailWrap.appendChild(el('label', { class: 'label' }, 'Email or phone'));
-  const emailInput = el('input', { class: 'input', placeholder: 'you@business.ng', value: 'funmi@fashionfabrics.ng' });
+  emailWrap.appendChild(el('label', { class: 'label' }, 'Email'));
+  const emailInput = el('input', { class: 'input', type: 'email', placeholder: 'you@business.ng', autocomplete: 'email' });
   emailWrap.appendChild(emailInput);
   form.appendChild(emailWrap);
 
@@ -78,42 +80,91 @@ export function Login({ navigate }) {
     el('label', { class: 'label !mb-2' }, 'Password'),
     el('a', {
       class: 'text-[12px] text-squad-green font-bold hover:underline cursor-pointer mb-2',
-      onClick: () => alert('Password reset flow — wire to Squad email service'),
+      onClick: () => alert('To reset your password during development, run:\n\n  node server/reset-password.js <email> <new-password>'),
     }, 'Forgot?'),
   ));
-  const passInput = el('input', { class: 'input', type: 'password', placeholder: '••••••••', value: 'demo1234' });
+  const passInput = el('input', { class: 'input', type: 'password', placeholder: '••••••••', autocomplete: 'current-password' });
   passWrap.appendChild(passInput);
   form.appendChild(passWrap);
 
-  // Remember me
-  form.appendChild(el('label', {
-    class: 'flex items-center gap-2.5 text-[13px] text-ink-2 cursor-pointer select-none',
-  },
-    el('input', { type: 'checkbox', checked: true, class: 'w-4 h-4 accent-squad-green' }),
-    'Keep me signed in for 30 days',
-  ));
+  // Inline error banner (hidden by default)
+  const errBox = el('div', {
+    class: 'rounded-xl p-3 text-[12.5px]',
+    style: { background: '#FCE8E8', color: '#9A1F1F', display: 'none' },
+  });
+  form.appendChild(errBox);
 
   const cta = el('button', {
     class: 'btn btn-primary w-full mt-2 py-[15px]',
-    onClick: () => {
-      cta.innerHTML = '';
-      cta.appendChild(el('span', { class: 'spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full' }));
-      cta.appendChild(el('span', {}, 'Signing you in…'));
-      setTimeout(() => navigate('#/app/overview'), 900);
-    },
+    type: 'submit',
   }, 'Log in', icon('arrow-right'));
   form.appendChild(cta);
 
-  // OR divider
-  form.appendChild(el('div', { class: 'flex items-center gap-3 my-2' },
-    el('div', { class: 'flex-1 h-px bg-line' }),
-    el('span', { class: 'text-[11px] text-ink-3 font-semibold uppercase tracking-wider' }, 'or'),
-    el('div', { class: 'flex-1 h-px bg-line' }),
-  ));
-  form.appendChild(el('button', {
-    class: 'btn btn-ghost w-full justify-center py-[14px]',
-    onClick: () => navigate('#/app/overview'),
-  }, icon('lightning-charge-fill'), 'Sign in with Squad'));
+  let busy = false;
+  async function submit(ev) {
+    if (ev) ev.preventDefault();
+    if (busy) return;
+    errBox.style.display = 'none';
+
+    const email = emailInput.value.trim();
+    const password = passInput.value;
+    if (!email || !password) {
+      errBox.textContent = 'Email and password are required.';
+      errBox.style.display = 'block';
+      return;
+    }
+
+    busy = true;
+    cta.disabled = true;
+    cta.innerHTML = '';
+    cta.appendChild(el('span', { class: 'spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full' }));
+    cta.appendChild(el('span', {}, 'Signing you in…'));
+
+    try {
+      const resp = await api.login({ email, password });
+      const user = resp.user;
+
+      // Switching identities on this browser? Wipe the previous user's cache
+      // so we don't render their txs / sales / score before the server refresh lands.
+      if (getCid() && getCid() !== user.customer_identifier) {
+        clearUserScopedStorage();
+      }
+
+      // Persist session + user shape the dashboard expects
+      setCid(user.customer_identifier);
+      saveUser({
+        customer_identifier: user.customer_identifier,
+        role: user.role || 'trader',
+        name: `${user.first_name} ${user.last_name}`,
+        firstName: user.first_name,
+        email: user.email,
+        business: user.business_name
+          || (user.role === 'worker' ? 'Job seeker' : `${user.first_name}’s Shop`),
+        category: user.category,
+        location: user.location,
+        squadWallet: user.virtual_account_number || null,
+        virtualAccountBank: user.virtual_account_bank || null,
+      });
+
+      // Warm up the live data caches before bouncing to the dashboard.
+      // We don't block on these — the dashboard already listens to update events.
+      refreshTxsFromServer();
+      refreshScoreFromServer();
+
+      navigate('#/app/overview');
+    } catch (e) {
+      busy = false;
+      cta.disabled = false;
+      cta.innerHTML = '';
+      cta.appendChild(el('span', {}, 'Log in'));
+      cta.appendChild(icon('arrow-right'));
+      errBox.style.display = 'block';
+      errBox.textContent = e.network
+        ? 'Cannot reach the TradeScore backend. Make sure `npm run dev` is running.'
+        : (e.data?.error || e.message || 'Login failed.');
+    }
+  }
+  form.addEventListener('submit', submit);
 
   card.appendChild(form);
   right.appendChild(card);

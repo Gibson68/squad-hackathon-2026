@@ -96,10 +96,11 @@ export function ScoreGauge({ score, size = 240 }) {
   fill.style.opacity = '1';
   dot.style.opacity = '1';
 
+  // prog animates 0→1; targetPct scales the arc length only.
   animate({
-    to: targetPct, duration: 1400,
+    to: 1, duration: 1400,
     onUpdate: prog => {
-      const fillEnd = 150 + prog * 240;
+      const fillEnd = 150 + prog * targetPct * 240;
       fill.setAttribute('d', arcPath(cx, cy, r, 150, Math.max(151, fillEnd)));
       dot.setAttribute('cx', cx + r * Math.cos(toRad(fillEnd)));
       dot.setAttribute('cy', cy + r * Math.sin(toRad(fillEnd)));

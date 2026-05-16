@@ -1,5 +1,8 @@
-// Hash-based router. Routes look like #/, #/signup, #/app, #/app/score, etc.
-// Each route is registered with a renderer that returns a DOM element.
+// History-API router. Routes look like /, /signup, /app, /app/score, etc.
+// (Previously used hash routing; navigate('#/foo') still works via back-compat.)
+//
+// Requires the dev/prod server to fall back to index.html for unknown paths
+// (the Express backend's catch-all does this).
 
 const routes = [];
 let host = null;
@@ -9,19 +12,26 @@ let lastRoute = null;
 export function init(rootEl) { host = rootEl; }
 
 // Register a route. `match` is either a string (exact) or a RegExp.
-// Renderer receives ({ params, navigate, hash }).
+// Renderer receives ({ params, navigate, path, prev }).
 export function register(match, render) {
   routes.push({ match, render });
 }
 
-export function navigate(hash) {
-  if (!hash.startsWith('#')) hash = '#' + hash;
-  if (location.hash === hash) handleRoute();
-  else location.hash = hash;
+// Accepts '/signup', '#/signup', or 'signup'. Pushes a new history entry and
+// renders. Same-path calls just re-render without pushing.
+export function navigate(path) {
+  if (typeof path !== 'string') return;
+  if (path.startsWith('#')) path = path.slice(1);
+  if (!path.startsWith('/')) path = '/' + path;
+  if (location.pathname === path) {
+    handleRoute();
+  } else {
+    history.pushState({}, '', path);
+    handleRoute();
+  }
 }
 
-function findRoute(hash) {
-  const path = hash.replace(/^#\/?/, '/');
+function findRoute(path) {
   for (const r of routes) {
     if (typeof r.match === 'string') {
       if (r.match === path) return { route: r, params: {} };
@@ -34,12 +44,12 @@ function findRoute(hash) {
 }
 
 function handleRoute() {
-  const hash = location.hash || '#/';
-  const found = findRoute(hash);
+  const path = location.pathname || '/';
+  const found = findRoute(path);
   if (!found) {
-    console.warn('No route for', hash);
-    location.hash = '#/';
-    return;
+    console.warn('No route for', path);
+    history.replaceState({}, '', '/');
+    return handleRoute();
   }
 
   let next;
@@ -47,7 +57,7 @@ function handleRoute() {
     next = found.route.render({
       params: found.params,
       navigate,
-      hash,
+      path,
       prev: lastRoute,
     });
   } catch (err) {
@@ -59,13 +69,21 @@ function handleRoute() {
   if (current) current.remove();
   host.appendChild(next);
   current = next;
-  lastRoute = hash;
+  lastRoute = path;
 
   window.scrollTo(0, 0);
 }
 
 export function start() {
-  window.addEventListener('hashchange', handleRoute);
-  if (!location.hash) location.hash = '#/';
-  else handleRoute();
+  // Back/forward buttons re-render the current path
+  window.addEventListener('popstate', handleRoute);
+
+  // Migrate users coming in via the old hash URLs (e.g. someone's
+  // bookmark of localhost:3000/#/app/loans) to clean paths.
+  if (location.hash && location.hash.startsWith('#/')) {
+    const target = location.hash.slice(1);
+    history.replaceState({}, '', target);
+  }
+
+  handleRoute();
 }
