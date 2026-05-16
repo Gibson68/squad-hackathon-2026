@@ -66,21 +66,7 @@ All accounts use password `demo1234`.
 
 ---
 
-## The 3-minute demo flow
-
-1. **Login as `demo@tradescore.ng`.** Populated trader dashboard: TradeScore 692, ₦2.4M wallet, growing revenue trend, 91 transactions, pre-approved for a loan.
-2. **Click "Find help now"** on the Overview card. Type a gig (e.g. *"Run stock from Balogun market"*) or pick one of the presets.
-3. **Click "Find matches".** Claude-Haiku 4.5 ranks 3 onboarded workers with reasoning. Each candidate card shows skill match, distance, rating, and **their own TradeScore** built from prior gigs.
-4. **Pick a worker → "Pay ₦5,000 via Squad".** Backend records outflow on trader + inflow on worker, recomputes both scores, broadcasts SSE. Confirmation shows the worker's new live TradeScore.
-5. **Switch tab, login as that worker.** Their dashboard reframes for them: "Your earnings today", "Gigs completed", "Recent gigs". The ₦5,000 you just sent is right at the top.
-6. **Click Loans.** Worker sees microcredit tiers (GT Starter Boost / Skills Loan / Asset Loan), the AI loan recommendation, and the **"Your TradeScore journey"** chart projecting when the next tier unlocks.
-7. **Click Network.** Close the demo here: ecosystem aggregates, current model version, accuracy trend, version history. *"The model retrains weekly. Every transaction tightens the signal."*
-
----
-
 ## Squad API integration
-
-This is the disqualifier criterion in Challenge 02. Every Squad endpoint below is wired to a real product feature, not faked.
 
 | Squad endpoint | What it powers | Code |
 |---|---|---|
@@ -122,15 +108,6 @@ The engine is auditable (no opaque ML weights), which matters for GTCO complianc
 | GT Smart Advance | 670 | ₦2,000,000 | 1.5% / mo | 12 months |
 | GT MaxPlus SME | 720 | ₦5,000,000 | 1.75% / mo | 24 months |
 | GT SME Growth | 770 | ₦10,000,000 | 2.0% / mo | 36 months |
-
-**Workers** see GTBank microcredit:
-
-| Tier | Min score | Max | Rate | Term | Use case |
-|---|---|---|---|---|---|
-| GT Starter Boost | 550 | ₦20,000 | 2.5% / mo | 30 days | Transport, airtime |
-| GT Skills Loan | 620 | ₦80,000 | 2.0% / mo | 60 days | Certifications, training |
-| GT Asset Loan | 700 | ₦300,000 | 1.8% / mo | 90 days | Bike, tools, equipment |
-
 ---
 
 ## AI integration (Claude-Haiku 4.5)
